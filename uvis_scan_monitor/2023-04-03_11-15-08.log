@@ -1,0 +1,149 @@
+2023-04-03 11:15:08,895 - INFO - Logging enabled; writing to /Users/mmarinelli/work/repos/WFC3Library_internal/notebooks/uvis_scan_monitor/2023-04-03_11-15-08.log
+2023-04-03 11:15:08,895 - INFO - Logging enabled. Writing to file: /Users/mmarinelli/work/repos/WFC3Library_internal/notebooks/uvis_scan_monitor/2023-04-03_11-15-08.log
+2023-04-03 11:15:08,970 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:09,153 - INFO - ['Detected sources at 254.1409045427734, 253.34141466005343']
+2023-04-03 11:15:09,155 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:09,208 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:09,274 - INFO - ['Detected sources at 248.59802960800218, 253.43793679397965']
+2023-04-03 11:15:09,276 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:09,325 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:09,388 - INFO - ['Detected sources at 251.94947947680348, 250.57457656158238']
+2023-04-03 11:15:09,390 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:09,470 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:09,534 - INFO - ['Detected sources at 251.42738324386292, 264.66780842013776']
+2023-04-03 11:15:09,536 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:09,614 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:09,685 - INFO - ['Detected sources at 253.97417603719964, 252.16016228626336']
+2023-04-03 11:15:09,687 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:09,745 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:09,812 - INFO - ['Detected sources at 252.21862771525966, 251.69147308117374']
+2023-04-03 11:15:09,815 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:09,929 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:09,991 - INFO - ['Detected sources at 252.25408772606704, 251.26040412812284']
+2023-04-03 11:15:09,994 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,039 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:10,097 - INFO - ['Detected sources at 251.43222854905224, 256.9311262725903']
+2023-04-03 11:15:10,099 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,164 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:10,229 - INFO - ['Detected sources at 251.91406133936033, 253.01144396296388']
+2023-04-03 11:15:10,231 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,278 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:10,336 - INFO - ['Detected sources at 250.02657928300127, 253.41107859374696']
+2023-04-03 11:15:10,338 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,385 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:10,446 - INFO - ['Detected sources at 252.738793107738, 254.8901498353125']
+2023-04-03 11:15:10,448 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,494 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:10,555 - INFO - ['Detected sources at 255.98453883259324, 258.04876804565095']
+2023-04-03 11:15:10,557 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,617 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:10,676 - INFO - ['Detected sources at 249.0479478605775, 256.69885805933654']
+2023-04-03 11:15:10,678 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,739 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:10,802 - INFO - ['Detected sources at 249.8314338832914, 249.84795295878445']
+2023-04-03 11:15:10,804 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,860 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:10,924 - INFO - ['Detected sources at 251.97097774109915, 251.23039623054353']
+2023-04-03 11:15:10,926 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:10,998 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:11,060 - INFO - ['Detected sources at 250.3025340068692, 256.76743976196536']
+2023-04-03 11:15:11,062 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:11,140 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:11,202 - INFO - ['Detected sources at 255.67792112368832, 253.40812836715688']
+2023-04-03 11:15:11,204 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:11,253 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:11,308 - INFO - ['Detected sources at 253.2488613042612, 253.93679247504383']
+2023-04-03 11:15:11,310 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:11,375 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:11,435 - INFO - ['Detected sources at 255.28248251656203, 260.0521885019708']
+2023-04-03 11:15:11,438 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:11,492 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:11,553 - INFO - ['Detected sources at 250.37389136327332, 257.0255210124941']
+2023-04-03 11:15:11,555 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:11,615 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:11,685 - INFO - ['Detected sources at 249.99035301709432, 253.83512171761308']
+2023-04-03 11:15:11,687 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:11,735 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:11,806 - INFO - ['Detected sources at 254.75237332067078, 251.70285068382418']
+2023-04-03 11:15:11,808 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:11,869 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:11,931 - INFO - ['Detected sources at 252.13870979382006, 232.20649078992136']
+2023-04-03 11:15:11,933 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:11,947 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:12,012 - INFO - ['Detected sources at 251.44525337281902, 265.60141117468373']
+2023-04-03 11:15:12,015 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:12,067 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:12,137 - INFO - ['Detected sources at 255.60728942202613, 254.953272683322']
+2023-04-03 11:15:12,139 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:12,198 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:12,262 - INFO - ['Detected sources at 255.77643668023984, 253.8342991741415']
+2023-04-03 11:15:12,264 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:12,321 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:12,382 - INFO - ['Detected sources at 251.4077434293217, 264.9357585869365']
+2023-04-03 11:15:12,384 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:12,434 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:12,495 - INFO - ['Detected sources at 250.087739110806, 264.7813617776582']
+2023-04-03 11:15:12,497 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:12,547 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:12,605 - INFO - ['Detected sources at 255.72879713891615, 258.8624085429962']
+2023-04-03 11:15:12,607 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:12,672 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:12,739 - INFO - ['Detected sources at 256.9826180193574, 256.6535509604575']
+2023-04-03 11:15:12,741 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:12,789 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:12,851 - INFO - ['Detected sources at 254.02107219784494, 257.5131600842533']
+2023-04-03 11:15:12,853 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:12,942 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:13,007 - INFO - ['Detected sources at 252.8138079297866, 257.2012495187196']
+2023-04-03 11:15:13,010 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:13,088 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:13,151 - INFO - ['Detected sources at 254.91481679981078, 251.42085808263442']
+2023-04-03 11:15:13,153 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:13,230 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:13,293 - INFO - ['Detected sources at 250.70553241658612, 250.54119465579834']
+2023-04-03 11:15:13,295 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:13,376 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:13,444 - INFO - ['Detected sources at 254.48956028675332, 250.30584683469232']
+2023-04-03 11:15:13,446 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:13,542 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:13,610 - INFO - ['Detected sources at 254.11059367375918, 253.53815737325758']
+2023-04-03 11:15:13,612 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:13,688 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:13,747 - INFO - ['Detected sources at 249.53502289805976, 255.87777416743205']
+2023-04-03 11:15:13,749 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:13,807 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:13,876 - INFO - ['Detected sources at 258.3996058781661, 259.0410269324343']
+2023-04-03 11:15:13,878 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:13,938 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:14,001 - INFO - ['Detected sources at 253.18281136898275, 253.27037928750352']
+2023-04-03 11:15:14,003 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:14,052 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:14,117 - INFO - ['Detected sources at 253.20100541730375, 251.31101954231306']
+2023-04-03 11:15:14,120 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:14,145 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:14,212 - INFO - ['Detected sources at 253.98305170579528, 265.3997883641773']
+2023-04-03 11:15:14,214 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:14,285 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:14,345 - INFO - ['Detected sources at 253.18510044116053, 252.82092994677342']
+2023-04-03 11:15:14,348 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:14,456 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:14,531 - INFO - ['Detected sources at 254.07583879103328, 257.05149997471494']
+2023-04-03 11:15:14,532 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:14,591 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:14,655 - INFO - ['Detected sources at 253.73707913431076, 265.9642685218444']
+2023-04-03 11:15:14,657 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:14,702 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:14,767 - INFO - ['Detected sources at 251.6751304518634, 257.01904072233305']
+2023-04-03 11:15:14,769 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:14,836 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:14,899 - INFO - ['Detected sources at 255.2867865797605, 256.17612962170006']
+2023-04-03 11:15:14,900 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:14,965 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:15,025 - INFO - ['Detected sources at 249.65234088149657, 255.55198884066812']
+2023-04-03 11:15:15,027 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:15,146 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:15,213 - INFO - ['Detected sources at 254.53230490114484, 250.52456638127293']
+2023-04-03 11:15:15,215 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
+2023-04-03 11:15:15,262 - WARNING - Input data contains invalid values (NaNs or infs), which were automatically clipped.
+2023-04-03 11:15:15,322 - INFO - ['Detected sources at 256.48143028622064, 258.2458987799914']
+2023-04-03 11:15:15,324 - INFO - ['Using scipy.stats.sigmaclip to calculate background...']
