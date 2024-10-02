@@ -12,14 +12,14 @@ Dependencies:
 
 Two WFC3 packages must be installed in your conda environment before beginning the notebook.
 
-1. WFC3_phot_tools (tools for UVIS photometric calibration originally developed by Claire Shanahan)
+1. `wfc3_phot_tools` (tools for UVIS photometric calibration originally developed by Claire Shanahan; maintained by Mariarosa Marinelli)
     - From the command line, run:
         git clone https://github.com/spacetelescope/wfc3-phot-tools`
     - Add the cloned WFC3_phot_tools directory to your \\$PATH and/or \\$PYTHONPATH by adding export command to shell configuration files (ex. `.bash_profile` or `.bashrc`).
     - Enter cloned directory and install tools with
         python setup.py install
 
-2. pyql (quicklook tools developed and maintained by WFC3 Quicklook team at STScI)
+2. `pyql` (quicklook tools developed and maintained by WFC3 Quicklook team at STScI)
     - From the command line, run:
         git clone https://github.com/spacetelescope/pyql
     - Add the cloned pyql directory to your \\$PATH and/or \\$PYTHONPATH by adding export command to shell configuration files (ex. `.bash_profile` or `.bashrc`)
