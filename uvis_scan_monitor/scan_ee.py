@@ -22,9 +22,9 @@ import matplotlib.pyplot as plt
 
 #sys.path.append('/Users/mmarinelli/work/repos/wfc3-phot-tools/wfc3_phot_tools')
 
-#import WFC3_phot_tools.spatial_scan.phot_tools as pt
+import wfc3_phot_tools.spatial_scan.phot_tools as pt
 #import spatial_scan.phot_tools as pt
-import phot_tools as pt
+#import phot_tools as pt
 
 #psf_dir = '/Users/mmarinelli/work/WFC3/uvis_scan_monitor/output/ee/lsf/'
 #output_dir = '/Users/mmarinelli/work/WFC3/uvis_scan_monitor/output/ee/'
@@ -96,6 +96,7 @@ def get_psf_ee(psf_data, ap_dim, sky_ap_dim, n_pix=30):
 
     return ee_phot, ee_bg
 
+
 def create_ee_table(filters, uvis_names,
                     ap_dim, sky_ap_dim,
                     ee_dir, ssf_dir, psf_type):
@@ -125,6 +126,7 @@ def create_ee_table(filters, uvis_names,
     ee.write(f'{ee_dir}/{psf_type}_{ap_dim[0]}_{ap_dim[1]}.csv',
              format='csv', overwrite=True)
     print(f'Table saved for {psf_type}')
+
 
 def parse_args():
     parser = ArgumentParser(prog='uvis_ssf_to_ee',

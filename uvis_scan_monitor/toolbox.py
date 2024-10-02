@@ -1,13 +1,16 @@
 import argparse
 from argparse import ArgumentParser
 from datetime import datetime
+from io import StringIO
 import logging
 import os
 import sys
 
-SCAN_PROGRAMS = [14878, 15398, 15583, 16021, 16416, 16580, 17016]
-core_filters = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
-core_targets = ['GD153', 'GRW70']
+MONITOR_DIR = '/grp/hst/wfc3v/wfc3photom/data/uvis_scan_monitor'
+SCAN_PROGRAMS = [14878, 15398, 15583, 16021, 16416, 16580, 17016, 17362]
+CORE_FILTERS = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
+CORE_TARGETS = ['GD153', 'GRW70', 'P330E']
+
 
 class CaptureOutput(list):
     """
@@ -24,6 +27,7 @@ class CaptureOutput(list):
         self.extend(self._stringio.getvalue().splitlines())
         del self._stringio
         sys.stdout = self._stdout
+
 
 def check_subdirectory(parent_dir, sub_name, verbose=True, log=False):
     """
@@ -142,7 +146,7 @@ class InteractiveArgs:
         process (CR reject and/or perform photometry) data
         in the defined directory for given targets. If no
         targets are defined, the list of standard stars for
-        the UVIS scan calibration programs, `core_targets`,
+        the UVIS scan calibration programs, `CORE_TARGETS`,
         will be used.
     filters : str or list of str
         WFC3/UVIS filters to select. If `download_new_data`
@@ -151,7 +155,7 @@ class InteractiveArgs:
         and/or perform photometry) data in the defined
         directory in these filters. If no filters are
         defined, the list of core filters for the UVIS scan
-        calibration programs, `core_filters`, will be used.
+        calibration programs, `CORE_FILTERS`, will be used.
     file_type : str
         File type with which to begin pipeline operations.
         Possible options are `flt` or `fcr`; defaults to
@@ -189,7 +193,7 @@ class InteractiveArgs:
                  reprocess_fcr=False,
                  run_ap_phot=False,
                  show_ap_plot=False,
-                 proposals=scan_programs,
+                 proposals=SCAN_PROGRAMS,
                  targets="core",
                  filters="core",
                  file_type="flt",
@@ -211,11 +215,11 @@ class InteractiveArgs:
         self.proposals = proposals
 
         if targets == 'core':
-            targets = core_targets
+            targets = CORE_TARGETS
         self.targets = targets
 
         if filters == 'core':
-            filters = core_filters
+            filters = CORE_FILTERS
         self.filters = filters
 
         self.file_type = file_type
@@ -266,6 +270,7 @@ class InteractiveArgs:
             `display_args()` function.
         """
         display_args(args=self)
+
 
 def display_args(args):
     """
@@ -353,7 +358,7 @@ def parse_args():
         process (CR reject and/or perform photometry) data
         in the defined directory for given targets. If no
         targets are defined, the list of standard stars for
-        the UVIS scan calibration programs, `core_targets`,
+        the UVIS scan calibration programs, `CORE_TARGETS`,
         will be used.
     filters : str or list of str
         WFC3/UVIS filters to select. If `download_new_data`
@@ -362,7 +367,7 @@ def parse_args():
         and/or perform photometry) data in the defined
         directory in these filters. If no filters are
         defined, the list of core filters for the UVIS scan
-        calibration programs, `core_filters`, will be used.
+        calibration programs, `CORE_FILTERS`, will be used.
     file_type : str
         File type with which to begin pipeline operations.
         Possible options are `flt` or `fcr`; defaults to
@@ -431,6 +436,13 @@ def parse_args():
     parser.add_argument("-s", "--show_ap_plot",
                         help="when set, show source detection plots",
                         action='store_true')
+    parser.add_argument("-o", "--obssyn",
+                        help='when set, calculate observed-to-synthetic ratios',
+                        action='store_true')
+    parser.add_argument("-z", "--analyze",
+                        help='when set, run analysis on photometry catalogs',
+                        action='store_true')
+
 
     # Pipeline Parameters:
     parser.add_argument("--proposals",
@@ -440,11 +452,11 @@ def parse_args():
     parser.add_argument("--targets",
                         help="target or list of targets (default is 'core')",
                         nargs="+",
-                        default="core")
+                        default=CORE_TARGETS)
     parser.add_argument("--filters",
                         help="filter or list of filters (default is 'core')",
                         nargs="+",
-                        default="core")
+                        default=CORE_FILTERS)
 
     parser.add_argument("--file_type",
                         help="file type to begin with (flt or fcr)",
@@ -547,6 +559,9 @@ def setup_logging(local=False,
 
     log_file = os.path.join(log_dir, log_name)
 
+    with open(log_file, 'w') as f:
+        f.writelines([''])
+
     logging.basicConfig(filename=f'{log_file}.log', filemode='w',
                         format='%(asctime)s - %(levelname)s - %(message)s',
                         level=logging.INFO)
@@ -555,6 +570,7 @@ def setup_logging(local=False,
                     log=log,
                     log_type='info',
                     message=f'Logging enabled. Writing to file: {log_file}.log')
+
 
 def display_message(verbose, log, message, log_type='info'):
     """
@@ -588,14 +604,70 @@ def display_message(verbose, log, message, log_type='info'):
         elif log_type == 'error':
             logging.error(message)
 
-        elif log_type == 'critical':
+        else:
             logging.critical(message)
 
-        else:
-            log_type_message = '`display_message()` called with invalid '\
-                               f'`log_type` = {log_type}\n'\
-                               'Logging the following as `info` message:'
-            if verbose:
-                print(log_type_message)
-            logging.warning(log_type_message)
-            logging.info(message)
+
+def initialize_directories(args):
+    """
+    If run in trial mode (`args.trial` is True), then this
+    creates the trial directory (named `args.name` in the
+    UVIS scan monitor directory), then creates the three
+    needed directories: `/data`, `/bad`, & `/output`, as
+    well as the proposal, target, and filter sub-
+    directories in `/data`. If `args.trial` is False,
+    then the existence of the three directories is verified
+    and the proposal, target, and filter sub-directories,
+    if they do not already exist in `/data`, are created.
+
+    Parameters
+    ----------
+    args : `argparse.Namespace` or `InteractiveArgs`
+        Arguments.
+
+    Returns
+    -------
+    dirs : dict
+        Dictionary of directories.
+    """
+    if args.trial:
+        trial_dir_name = args.name
+        trial_dir = check_subdirectory(parent_dir=MONITOR_DIR,
+                                       sub_name=trial_dir_name,
+                                       verbose=args.verbose,
+                                       log=args.log)
+
+    else:
+        trial_dir = MONITOR_DIR
+
+    dir_names = ['data', 'bad', 'output']
+    dirs = {}
+
+    for dir_name in dir_names:
+        dir = check_subdirectory(parent_dir=trial_dir,
+                                 sub_name=dir_name,
+                                 verbose=args.verbose,
+                                 log=args.log)
+        dirs[f'{dir_name}_dir'] = dir
+
+        if dir_name == 'data':
+            props = [str(x) for x in args.proposals]
+            for prop in props:
+                prop_dir = check_subdirectory(parent_dir=dir,
+                                              sub_name=prop,
+                                              verbose=args.verbose,
+                                              log=args.log)
+
+                for targ in args.targets:
+                    targ_dir = check_subdirectory(parent_dir=prop_dir,
+                                                  sub_name=targ,
+                                                  verbose=args.verbose,
+                                                  log=args.log)
+
+                    for filt in args.filters:
+                        filt_dir = check_subdirectory(parent_dir=targ_dir,
+                                                      sub_name=filt,
+                                                      verbose=args.verbose,
+                                                      log=args.log)
+
+    return dirs

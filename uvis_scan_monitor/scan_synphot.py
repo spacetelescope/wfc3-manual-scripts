@@ -1,17 +1,21 @@
 #!/usr/bin/env python
 
-from astropy.table import Table
-import synphot as syn
-from astropy import units as u
-import stsynphot as stsyn
+from glob import glob
 import numpy as np
 import os
+
+from astropy import units as u
+from astropy.table import Table
+import stsynphot as stsyn
+import synphot as syn
+
 
 monitor_dir = '/grp/hst/wfc3v/wfc3photom/data/uvis_scan_monitor'
 
 print('Only using uvis1 in synthetic bandpass.')
 
-def make_syn_spec(target):
+
+def make_syn_spec(target, use_latest=True):
     """
     Creates a synthetic spectrum for the target of interest.
 
@@ -25,14 +29,22 @@ def make_syn_spec(target):
     syn_spec : 'synphot.spectrum.SourceSpectrum'
         Synthetic spectrum generated from CALSPEC model of target.
     """
-    target_files = {'GD153': 'gd153_stiswfcnic_003.fits',
-                    'GRW70': 'grw_70d5824_stiswfcnic_003.fits'}
+    files = {'GD153': 'gd153_stiswfcnic_*.fits',
+             'GRW70': 'grw_70d5824_stiswfcnic_*.fits'}
 
-    syn_spec = syn.SourceSpectrum.from_file(os.path.join(os.environ['PYSYN_CDBS'],
-                                                           'calspec',
-                                                           target_files[target]))
+    calspec_dir = os.path.join(os.environ['PYSYN_CDBS'], 'calspec')
 
-    return syn_spec
+    if use_latest:
+        matching_files = sorted(glob(os.path.join(calspec_dir, files[target])))
+        file = matching_files[-1]
+
+    else:
+        file = os.path.join(calspec_dir, files[target].replace('*', '003'))
+
+    syn_spec = syn.SourceSpectrum.from_file(os.path.join(calspec_dir, file))
+
+    return syn_spec, file.split('/')[]
+
 
 def lookup_ee(uvis_name, filt, psf_type, ee_dir, ap_dim):
     """
@@ -147,6 +159,8 @@ def calculate_syncr(syn_obs, phtratio):
     return syn_cr
 
 
+
+
 # def set_paths(trial_dir_name):
 #     data_dir = os.path.join(monitor_dir, trial_dir_name)
 #     if not os.path.exists(data_dir):
@@ -189,15 +203,15 @@ if __name__ == '__main__':
     # generalize this later:
     #syn_column_name = f'{psf_type}_countrate_{ap_dim[0]}_{ap_dim[1]}'
 #    for psf_type in ["simple", "blended"]:
+    gd153_spec, gd153_file = make_syn_spec('GD153', use_latest=True)
+    grw70_spec, grw70_file = make_syn_spec('GRW70', use_latest=True)
+
     for psf_type in ["blended"]:
         if psf_type == "blended":
             filters = jfilters
         print(psf_type)
         syn_column_name = f'{psf_type}_fcr_phot'
         timecorr = True
-
-        gd153_spec = make_syn_spec('GD153')
-        grw70_spec = make_syn_spec('GRW70')
 
     #    ee_dir = '/Users/mmarinelli/work/WFC3/uvis_scan_monitor/output/ee/'
         all_data = Table.read(os.path.join(data_dir, "output/all_data.csv"), format='csv')
