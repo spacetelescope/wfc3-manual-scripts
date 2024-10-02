@@ -96,6 +96,7 @@ def get_psf_ee(psf_data, ap_dim, sky_ap_dim, n_pix=30):
 
     return ee_phot, ee_bg
 
+
 def create_ee_table(filters, uvis_names,
                     ap_dim, sky_ap_dim,
                     ee_dir, ssf_dir, psf_type):
@@ -125,6 +126,7 @@ def create_ee_table(filters, uvis_names,
     ee.write(f'{ee_dir}/{psf_type}_{ap_dim[0]}_{ap_dim[1]}.csv',
              format='csv', overwrite=True)
     print(f'Table saved for {psf_type}')
+
 
 def parse_args():
     parser = ArgumentParser(prog='uvis_ssf_to_ee',

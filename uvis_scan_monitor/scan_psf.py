@@ -70,6 +70,9 @@ monitor_dir = '/grp/hst/wfc3v/wfc3photom/data/uvis_scan_monitor'
 synphot_dir = os.path.join(monitor_dir, 'synphot')
 #save_dir = os.path.join(synphot_dir, '2023_03_14_test1')
 
+ALL_FILTERS = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
+JAY_FILTERS = ['F275W', 'F336W', 'F438W', 'F606W', 'F814W']
+
 
 # Main class for generating Toy PSF to convolve with scan
 class ToyPSF():
@@ -499,6 +502,7 @@ def make_scan_line(img_shape, xstart, xend, ystart, yend):
 
     return img
 
+
 def setup_dirs(save_dir_name):
     """
     Helper functions to create directories as needed.
@@ -528,6 +532,7 @@ def setup_dirs(save_dir_name):
                                  sub_name="ssf")
 
     return psf_dir, ssf_dir
+
 
 def make_convolvedpsf(psf_type, filt, ee_table, uvis_name, save_dir_name):
     """
@@ -594,6 +599,7 @@ def make_convolvedpsf(psf_type, filt, ee_table, uvis_name, save_dir_name):
         np.savetxt(f'{ssf_dir}/{ssf_fname}', out, delimiter=',')
         print(f'File {ssf_fname} saved.')
 
+
 def parse_args():
     """
     Parses command line arguments.
@@ -631,74 +637,88 @@ def parse_args():
 
     args = parser.parse_args()
 
+    if args.filters == ['all']:
+        if args.type == 'simple':
+            args.filters = ALL_FILTERS
+        else:
+            args.filters == JAY_FILTERS
+    else:
+        args.filters = [x for x in args.filters if x in ALL_FILTERS]
+
+    if args.uvis == 'both':
+        args.uvis = ['uvis1', 'uvis2']
+    else:
+        args.uvis = [f'uvis{args.uvis}']
+
     return args
 
 
-def clean_cl_args(args):
-    """
-    Helper function to clean up command line arguments.
-    (Probably there's a better way to do this but I'll
-    stick with what works for now.)
-
-    Parameter
-    ---------
-    args : `argparse.Namespace`
-        Object where the attributes correspond to the
-        arguments given at the command line (and the
-        default values for optional arguments, if
-        applicable).
-
-    Returns
-    -------
-    filters : list of str
-        List of WFC3/UVIS filters to create SSFs for.
-    uvises : list of str
-        Which CCDs to make SSFs for. Either [`uvis1`],
-        [`uvis`], or [`uvis1`, `uvis2`].
-    """
-    all_ee_filters = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
-    all_jpsf_filters = ['F275W', 'F336W', 'F438W', 'F606W', 'F814W']
-
-    if args.filters == ['all']:
-        if args.type == 'simple':
-            filters = all_ee_filters
-        else:
-            filters = all_jpsf_filters
-
-    else:
-        filters = args.filters
-        if args.type == "simple":
-            for filt in filters:
-                if filt not in all_ee_filters:
-                    print("Non-core filter listed. Removing "\
-                          f"{filt} from filter list...")
-                    filters.remove(filt)
-        else:
-            for filt in filters:
-                if filt not in all_jpsf_filters:
-                    print("No empirical PSF is available for "\
-                          f"{filt}. Removing from filter list...")
-                    filters.remove(filt)
-
-    uvis_dict = {'1': ['uvis1'],
-                 '2': ['uvis2'],
-                 'both': ['uvis1', 'uvis2']}
-
-    uvises = uvis_dict[args.uvis]
-
-    return filters, uvises
+# def clean_cl_args(args):
+#     """
+#     Helper function to clean up command line arguments.
+#     (Probably there's a better way to do this but I'll
+#     stick with what works for now.)
+#
+#     Parameter
+#     ---------
+#     args : `argparse.Namespace`
+#         Object where the attributes correspond to the
+#         arguments given at the command line (and the
+#         default values for optional arguments, if
+#         applicable).
+#
+#     Returns
+#     -------
+#     filters : list of str
+#         List of WFC3/UVIS filters to create SSFs for.
+#     uvises : list of str
+#         Which CCDs to make SSFs for. Either [`uvis1`],
+#         [`uvis`], or [`uvis1`, `uvis2`].
+#     """
+#     all_ee_filters = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
+#     all_jpsf_filters = ['F275W', 'F336W', 'F438W', 'F606W', 'F814W']
+#
+#     if args.filters == ['all']:
+#         if args.type == 'simple':
+#             filters = all_ee_filters
+#         else:
+#             filters = all_jpsf_filters
+#
+#     else:
+#         filters = args.filters
+#         if args.type == "simple":
+#             for filt in filters:
+#                 if filt not in all_ee_filters:
+#                     print("Non-core filter listed. Removing "\
+#                           f"{filt} from filter list...")
+#                     filters.remove(filt)
+#         else:
+#             for filt in filters:
+#                 if filt not in all_jpsf_filters:
+#                     print("No empirical PSF is available for "\
+#                           f"{filt}. Removing from filter list...")
+#                     filters.remove(filt)
+#
+#     uvis_dict = {'1': ['uvis1'],
+#                  '2': ['uvis2'],
+#                  'both': ['uvis1', 'uvis2']}
+#
+#     uvises = uvis_dict[args.uvis]
+#
+#     return filters, uvises
+#
 
 
 if __name__ == '__main__':
 
     args = parse_args()
-    filters, uvises = clean_cl_args(args)
+    #filters, uvises = clean_cl_args(args)
 
-    for uvis in uvises:
+    for uvis in args.uvises:
         ee_from_stare = Table.read(f'{synphot_dir}/wfc3{uvis}_aper_007_syn.csv',
                                    format='csv')
 
-        for filt in filters:
+        for filt in args.filters:
             make_convolvedpsf(psf_type=args.type,
                               filt=filt,
                               ee_table=ee_from_stare,
