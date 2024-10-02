@@ -653,66 +653,9 @@ def parse_args():
     return args
 
 
-# def clean_cl_args(args):
-#     """
-#     Helper function to clean up command line arguments.
-#     (Probably there's a better way to do this but I'll
-#     stick with what works for now.)
-#
-#     Parameter
-#     ---------
-#     args : `argparse.Namespace`
-#         Object where the attributes correspond to the
-#         arguments given at the command line (and the
-#         default values for optional arguments, if
-#         applicable).
-#
-#     Returns
-#     -------
-#     filters : list of str
-#         List of WFC3/UVIS filters to create SSFs for.
-#     uvises : list of str
-#         Which CCDs to make SSFs for. Either [`uvis1`],
-#         [`uvis`], or [`uvis1`, `uvis2`].
-#     """
-#     all_ee_filters = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
-#     all_jpsf_filters = ['F275W', 'F336W', 'F438W', 'F606W', 'F814W']
-#
-#     if args.filters == ['all']:
-#         if args.type == 'simple':
-#             filters = all_ee_filters
-#         else:
-#             filters = all_jpsf_filters
-#
-#     else:
-#         filters = args.filters
-#         if args.type == "simple":
-#             for filt in filters:
-#                 if filt not in all_ee_filters:
-#                     print("Non-core filter listed. Removing "\
-#                           f"{filt} from filter list...")
-#                     filters.remove(filt)
-#         else:
-#             for filt in filters:
-#                 if filt not in all_jpsf_filters:
-#                     print("No empirical PSF is available for "\
-#                           f"{filt}. Removing from filter list...")
-#                     filters.remove(filt)
-#
-#     uvis_dict = {'1': ['uvis1'],
-#                  '2': ['uvis2'],
-#                  'both': ['uvis1', 'uvis2']}
-#
-#     uvises = uvis_dict[args.uvis]
-#
-#     return filters, uvises
-#
-
-
 if __name__ == '__main__':
 
     args = parse_args()
-    #filters, uvises = clean_cl_args(args)
 
     for uvis in args.uvises:
         ee_from_stare = Table.read(f'{synphot_dir}/wfc3{uvis}_aper_007_syn.csv',
