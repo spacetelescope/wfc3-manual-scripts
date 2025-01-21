@@ -637,6 +637,7 @@ def get_header_info(scan_obj, verbose, log):
     for keyword in keywords:
         if keyword == 'targname':
             header_info[keyword] = resolve_targnames(targname=scan_obj.hdr[keyword.upper()],
+                                                     simplify=True,
                                                      verbose=verbose,
                                                      log=log)
         header_info[keyword] = scan_obj.hdr[keyword.upper()]
@@ -684,7 +685,10 @@ def resolve_targnames(targname, simplify=True, verbose=True, log=False):
                  'GD-153': 'GD153',
                  'GRW+70D5824': 'GRW70',
                  'GRW+70D': 'GRW70',
-                 'GRW70': 'GRW70'}
+                 'GRW70': 'GRW70',
+                 'P330E': 'P330E',
+                 'GSC-02581-02323': 'P330E',
+                 'TYC-4212-455-1': 'TYC-4212-455-1'}
     if simplify:
         try:
             resolved_targname = targnames[targname]
@@ -703,6 +707,7 @@ def resolve_targnames(targname, simplify=True, verbose=True, log=False):
             resolved = targname
 
     return resolved
+
 
 def remove_non_scans(prods_p_t_f, proposal_ql_roots, verbose, log):
     """

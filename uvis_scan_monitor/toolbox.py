@@ -11,7 +11,6 @@ SCAN_PROGRAMS = [14878, 15398, 15583, 16021, 16416, 16580, 17016, 17362]
 CORE_FILTERS = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
 CORE_TARGETS = ['GD153', 'GRW70', 'P330E']
 
-
 class CaptureOutput(list):
     """
     Class to capture output from externally-imported
@@ -638,7 +637,7 @@ def initialize_directories(args):
                                        log=args.log)
 
     else:
-        trial_dir = MONITOR_DIR
+        trial_dir = os.path.join(MONITOR_DIR, args.name)
 
     dir_names = ['data', 'bad', 'output']
     dirs = {}
