@@ -1,3 +1,17 @@
+"""
+Functions for compiling catalogs of WFC3/UVIS spatial scan photometry.
+
+Author
+------
+    Mariarosa Marinelli
+
+Use
+---
+    This module can be run from the command line, i.e.
+
+        python compile_catalog.py --csv_dir DIRECTORY
+        --norm_method METHOD --write_loc LOCATION --filename FILENAME
+"""
 from argparse import ArgumentParser
 from astropy.table import Table, vstack
 from glob import glob
@@ -7,9 +21,18 @@ import os
 
 def merge_csvs(csv_dir):
     """
+    In a given directory, merges CSV files that match the
+    wildcard file name: '?????_*_F???W.csv'.
+
     Arguments
     ---------
-    csv_dir :
+    csv_dir : str
+        String representation of directory path.
+
+    Returns
+    -------
+    csv_tbl : astropy.table.Table
+        Astropy table of stacked CSVs.
     """
     csv_tbl = Table()
 
@@ -22,8 +45,9 @@ def merge_csvs(csv_dir):
     if len(csv_paths) > 0:
         for csv_path in csv_paths:
             tbl = Table.read(csv_path, format='csv')
-            tbl['linenum'] = [str(linenum) for linenum in tbl['linenum']]
-            csv_tbl = vstack([csv_tbl, tbl])
+            if len(tbl) > 0:
+                tbl['linenum'] = [str(linenum) for linenum in tbl['linenum']]
+                csv_tbl = vstack([csv_tbl, tbl])
 
             del tbl
 
@@ -32,13 +56,24 @@ def merge_csvs(csv_dir):
     return csv_tbl
 
 
-def normalize_phot(subset, norm_method='first'):
+def normalize_phot(subset, norm_method='first', file_type='fcr'):
     """
+    Function to normalize photometry by a specified method.
+    Also calculates the subset standard deviation and
+    subset mean to provide a 'norm_dist_std' value.
+
     Parameters
     ----------
     subset : `astropy.table.table`
     norm_method : str
-
+        Method by which to normalize the data. Supported
+        options: 'first' (default), 'mean', and 'median'.
+    file_type : str
+        Refers to the files used for the photometry. 99.99%
+        of the time this should be 'fcr' (flat-fielded and
+        calibrated with custom spatial scan cosmic ray
+        routine applied). If importing this function, then
+        you can also try it with 'flt'.
 
     Returns
     -------
@@ -51,17 +86,16 @@ def normalize_phot(subset, norm_method='first'):
         rate, in standard deviations.
     """
     if norm_method == 'first':
-        first_program = subset[subset['proposid'] == 14878]
-        comp_cr = np.mean(first_program['fcr_phot'])
-        norm_colname = 'fcr_phot_norm_14878'
+        first_program = subset[subset['proposid'] == np.min(subset['proposid'])]
+        comp_cr = np.mean(first_program[f'{file_type}_phot'])
+
+    elif norm_method == 'mean':
+        comp_cr = np.mean(subset[f'{file_type}_phot'])
 
     else:
-        if norm_method == 'mean':
-            comp_cr = np.mean(subset['fcr_phot'])
-        else:
-            comp_cr = np.median(subset['fcr_phot'])
+        comp_cr = np.median(subset[f'{file_type}_phot'])
 
-        norm_colname = f'fcr_phot_norm_{norm_method}'
+    norm_colname = f'{file_type}_phot_norm_{norm_method}'
 
     norm_phot = [cr / comp_cr for cr in subset['fcr_phot']]
     norm_std = np.std(norm_phot)
@@ -76,6 +110,9 @@ def normalize_phot(subset, norm_method='first'):
 
 def parse_args():
     """
+    Parses command line arguments, if you're running this
+    as a standalone module instead of importing functions.
+
     Returns
     -------
     args : `argparse.Namespace`
@@ -112,6 +149,10 @@ def parse_args():
 
 def compile_catalog(csv_dir, norm_method):
     """
+    Function to compile a catalog by merging CSVs in a
+    directory and normalizing subset data (matching target/
+    filter/chip).
+
     Parameter
     ---------
     csv_dir : str
@@ -158,6 +199,20 @@ def compile_catalog(csv_dir, norm_method):
 
 def write_catalog(catalog, write_loc, filename):
     """
+    Function to write out catalog. Prints an error message
+    if a file with that particular filename already exists
+    (so it does not overwrite anything). Also checks to
+    make sure that the file was written out.
+
+    Parameters
+    ----------
+    compiled : `astropy.table.table`
+        Compiled catalog with additional columns.
+    write_loc : str
+        String representation of directory path where
+        catalog should be saved.
+    filename : str
+        Name of file.
     """
     catalog_filepath = os.path.join(write_loc, filename)
     print(f'Writing catalog....')
@@ -176,7 +231,7 @@ def write_catalog(catalog, write_loc, filename):
                 print(f"ERROR: can't find catalog.\n\t{catalog_filepath}")
 
         except Exception as e:
-            print(f'ERROR: unknown  exception occurred:\n\t{e}')
+            print(f'ERROR: unknown exception occurred:\n\t{e}')
 
 
 if __name__ == '__main__':
