@@ -1,6 +1,7 @@
+#!/usr/bin/env python
 """
-Note - still in progress 
-uvis_convolve_ee.py replaces scan_ee.py
+Note - still in progress
+uvis_ssf_ee.py replaces scan_ee.py
 
 This script:
 1) Takes the PSFs generated from uvis_convolve_psf.py and uses
@@ -8,23 +9,23 @@ aperture photometry to calculate the EE correction.
 2) Saves the EE corrections to a table.
 
 """
-#!/usr/bin/env python
-import sys
-import os
+from argparse import ArgumentParser
 import numpy as np
+import os
+import sys
 
 from astropy.io import fits
 from astropy.table import Table
 import matplotlib.pyplot as plt
 
-
 import wfc3_phot_tools.spatial_scan.phot_tools as pt
 
-from toolbox import MONITOR_DIR, CORE_FILTERS, JAY_FILTERS
+from toolbox import check_subdirectory, display_message, make_timestamp
+from uvis_convolve_psf import reformat_syn_args
 
 
-
-def get_psf_ee(psf_data, ap_dim, sky_ap_dim, center=(256, 256), n_pix=30):
+def get_ssf_ee(ssf_data, ap_dim, sky_ap_dim, center=(256, 256), n_pix=30,
+               verbose=True, log=False):
     """
     Calculates EE correction with aperture photometry.
     We don't call detect_sources_scan() like we normally
@@ -36,12 +37,14 @@ def get_psf_ee(psf_data, ap_dim, sky_ap_dim, center=(256, 256), n_pix=30):
 
     Parameters
     ----------
-    psf_data : array
+    ssf_data : array
         Array of data read in from PSF file.
     ap_dim : tuple of int
         Photometric aperture, in pixels.
     sky_ap_dim : tuple of int
         Inner dimensions of sky background rind.
+    sky_thickness : int
+        Width of the sky background rind in pixels.
     n_pix : int
         Number of pixels representing the thickness of the
         sky background rind.
@@ -58,12 +61,12 @@ def get_psf_ee(psf_data, ap_dim, sky_ap_dim, center=(256, 256), n_pix=30):
         "Flux" of the background aperture divided by the
         total "flux" of the PSF
     """
-    syn_apphot = pt.aperture_photometry_scan(psf_data, center[0], center[1],
+    syn_apphot = pt.aperture_photometry_scan(ssf_data, center[0], center[1],
                                              ap_dim[0], ap_dim[1], theta=0.0,
                                              show=False, plt_title=None)
     syn_sum = syn_apphot['aperture_sum'][0]
 
-    mean_bg = pt.calc_sky(psf_data, center[0], center[1],
+    mean_bg = pt.calc_sky(ssf_data, center[0], center[1],
                            sky_ap_dim[1], sky_ap_dim[0],
                            n_pix=n_pix, method='mean')
 
@@ -82,50 +85,75 @@ def get_psf_ee(psf_data, ap_dim, sky_ap_dim, center=(256, 256), n_pix=30):
     # sky-subtracted photometric total
     phot_syn = syn_sum - syn_bg
 
-    ee_phot = phot_syn/np.sum(psf_data)
-    ee_bg = rind_bg/np.sum(psf_data)   # EE of background rind itself
+    ee_phot = phot_syn / np.sum(ssf_data)
+    ee_bg = rind_bg / np.sum(ssf_data)   # EE of background rind itself
 
     return ee_phot, ee_bg
 
 
-def create_ee_table(filters, uvis_names,
-                    ap_dim, sky_ap_dim,
-                    ee_dir, ssf_dir, psf_type):
+def write_ee_tbl(ee_tbl, parent_dir, csv_name, verbose, log):
+    """Write out encircled energy table
+
+    Parameters
+    ----------
+    ee_tbl :
+    parent_dir :
+    csv_name :
+    verbose :
+    log :
     """
-    Creates a table with the EE values.
-    """
-    rows = []
+    ee_file = os.path.join(parent_dir, 'ee', csv_name)
 
-    for uvis_name in uvis_names:
-        for filt in filters:
-            fname = f'{uvis_name}_{filt}_convolvedpsf.csv'
+    if os.path.exists(ee_file):
+        alt_file = ee_file.replace('.csv', f'_{make_timestamp()}.csv')
+        decision = input(f'File already exists at {ee_file}. '\
+                         'Please choose from the following options:'\
+                         '\n\t1. Overwrite existing file'\
+                         f'\n\t2. Save as new file {alt_file.split("/")[-1]}'\
+                         '\n\t3. Do not write out file'\
+                         '\n\t\t')
 
-            if psf_type == 'blended':
-                fname = f'jay_{uvis_name}_{filt}_convolvedpsf.csv'
+        if decision == '1':
+            ee_tbl.write(ee_file, format='csv', overwrite=True)
+            display_message(verbose, log, log_type='info',
+                            message='Option 1 selected. Overwrote existing '\
+                                    f'EE table at {ee_file}')
 
-            psf = np.loadtxt(f'{ssf_dir}/{fname}', delimiter=',')
+        elif decision == '2':
+            ee_tbl.write(alt_file, format='csv')
+            display_message(verbose, log, log_type='info',
+                            message='Option 1 selected. Wrote EE table to '\
+                                    f'{alt_file}')
+        else:
+            display_message(verbose, log, log_type='info', message='Option 3 '\
+                            'selected. Did not write out EE table.')
 
-            ee_phot, ee_bg = get_psf_ee(psf, ap_dim, sky_ap_dim)
+    else:
+        ee_tbl.write(ee_file, format='csv')
+        display_message(verbose, log, log_type='info',
+                        message=f'Wrote EE table to {ee_file}')
 
-            row = [uvis_name, filt, ee_phot, ee_bg, str(ap_dim), str(sky_ap_dim), psf_type]
-            rows.append(row)
-
-    ee = Table(rows=rows,
-               names=('uvis', 'filter', 'ee_phot', 'ee_bg',
-                      'ap_dim', 'sky_ap_dim', 'PSF type'))
-
-    ee.write(f'{ee_dir}/{psf_type}_{ap_dim[0]}_{ap_dim[1]}.csv',
-             format='csv', overwrite=True)
-    print(f'Table saved for {psf_type}')
+    return ee_tbl
 
 
 def parse_args():
+    """
+    Parses command line arguments.
+
+    Returns
+    -------
+    args : `argparse.Namespace`
+        Object where the attributes correspond to the
+        arguments given at the command line (and the
+        default values for optional arguments, if
+        applicable).
+
+    """
     parser = ArgumentParser(prog='uvis_ssf_ee',
                             description='calculate encircled energy corrections'\
                                         ' for "scan spread functions" (SSF)',
                             epilog = 'Authors: Mariarosa Marinelli & Varun Bajaj')
 
-### new:
     parser.add_argument("-v", "--verbose",
                         help="when set, prints statements to command line",
                         action="store_true")
@@ -136,28 +164,22 @@ def parse_args():
                         help="name of pipeline run where PSF files are located",
                         required=True)
 
-# keep:
     parser.add_argument("-t", "--type",
                         choices=["simple", "blended"],
                         help="type of convolved PSF to make, `simple` or `blended`",
                         required=True)
 
-#    parser.add_argument("-i", "--input_dir",
-#                        help="name of input directory in uvis_scan_monitor",
-#                        required=True)
     parser.add_argument("-f", "--filters",
                         nargs="+",
                         help="filter or list of filters (default is `all`)",
                         default=["all"])
 
-# updated 
     parser.add_argument("-u", "--uvis",
                         help="list integer number(s) for UVIS CCD(s)",
                         nargs="+",
                         type=int,
                         default=[1, 2])
 
-### keep:
     parser.add_argument("--ap_dim",
                         help="photometric aperture dimensions: x_px y_px",
                         nargs=2,
@@ -174,42 +196,69 @@ def parse_args():
                         nargs=2,
                         type=int,
                         default=[256, 256])
-### new
     parser.add_argument("--sky_thickness",
                         help="sky background rind thickness: px (default is 30)",
                         default=30,
                         type=int)
 
-    parser.add_argument("--show_plots",
-                        help="when set, shows plots",
-                        action="store_true")
-    parser.add_argument("--save_plots",
-                        help="when set, saves plots",
-                        action="store_true")
-
-    args = parser.parse_args()
+    args = reformat_syn_args(parser.parse_args())
 
     return args
 
 
+def uvis_ssf_ee(psf_type, uvis, filters, parent_dir,
+                ap_dim, sky_ap_dim, sky_thickness, center,
+                verbose=True, log=False):
+    """
+    Main function.
+
+    Parameters
+    ----------
+    psf_type :
+    uvis :
+    filters :
+    parent_dir :
+    ap_dim :
+    sky_ap_dim :
+    ee_dir :
+    """
+    ee_dir = check_subdirectory(parent_dir, 'ee', verbose, log)
+
+    rows = []
+
+    for u in uvis:
+        for filt in filters:
+            ssf_dir = os.path.join(parent_dir, 'ssf')   # i think this should be the SSF, not PSF
+            ssf_file = os.path.join(ssf_dir, f'{psf_type}_{u}_{filt}_ssf.csv')
+
+            try:
+                ssf_data = np.loadtxt(ssf_file, delimiter=',')
+                phot, bg = get_ssf_ee(ssf_data, ap_dim, sky_ap_dim, center)
+                rows.append([psf_type, u, filt, str(ap_dim), str(sky_ap_dim),
+                             str(sky_thickness), str(center), phot, bg])
+
+            except FileNotFoundError:
+                display_message(verbose, log, log_type='critical',
+                                message=f"Unable to locate SSF file {ssf_file}")
+
+    ee_tbl = Table(rows=rows,
+               names=('type', 'uvis', 'filter',
+                      'ap_dim', 'sky_ap_dim', 'sky_thickness',
+                      'center', 'ee_phot', 'ee_bg'))
+
+    # Construct name of CSV file:
+    ee_csv = f'{psf_type}_ee_'\
+             f'APER-{ap_dim[0]}-{ap_dim[1]}_'\
+             f'SKY-{sky_ap_dim[0]}-{sky_ap_dim[1]}_'\
+             f'RIND-{sky_thickness}_'\
+             f'CENTER-{center[0]}-{center[1]}.csv'
+
+    ee_tbl = write_ee_tbl(ee_tbl, parent_dir, ee_csv, verbose, log)
+
 
 if __name__ == '__main__':
-    test_dir = '/grp/hst/wfc3v/wfc3photom/data/uvis_scan_monitor/synphot/2023_03_14_test1'
-    ssf_dir = os.path.join(test_dir, 'lsf')
-    ee_dir = os.path.join(test_dir, 'ee')
+    args = parse_args()
 
-    if not os.path.exists(ee_dir):
-        os.mkdir(ee_dir)
-        print(f'Made new directory at {ee_dir}')
-
-    #filters = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
-    uvis_names = ['uvis1', 'uvis2']
-
-#    jfilters = filters[2:]
-
-    sky_ap_dim = (300, 400)
-    ap_dim = (44, 268)
-
-    create_ee_table(CORE_FILTERS, uvis_names, ap_dim, sky_ap_dim, ee_dir, ssf_dir, psf_type='simple')
-
-    create_ee_table(JAY_FILTERS, ['uvis2'], ap_dim, sky_ap_dim, ee_dir, ssf_dir, psf_type='blended')
+    uvis_ssf_ee(args.type, args.uvis, args.filters, args.dir,
+                args.ap_dim, args.sky_ap_dim, args.sky_thickness,
+                args.center, args.verbose, args.log)
