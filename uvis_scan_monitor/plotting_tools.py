@@ -1,6 +1,22 @@
 """
-TK work on!
+Tools to support plotting-related functionality for the WFC3/UVIS spatial scan monitor. 
 """
+import matplotlib
+
+MPL_COLDICT = [c for c in matplotlib.rcParams["axes.prop_cycle"]]
+MPL_COLORS = [MPL_COLDICT[i]['color'] for i in range(len(MPL_COLDICT))]
+MY_COLORS = ['#20639B', '#117733', '#44AA99', '#88D5FB', '#FFC800',
+             '#ED553B', '#C31111', '#AA4499', '#882255', '#1A0488']
+
+MPL_SETTINGS = {"axes.facecolor": "white",
+                "figure.facecolor": "white",
+                "axes.edgecolor": "black",
+                "text.usetex": True,
+                "font.family": "serif",
+                "font.serif": ["Computer Modern Roman"],
+                "font.size": 14,
+                "axes.linewidth": 1}
+
 
 def plot_normcr(data, filt, uvis='both', save=False, save_dir=None):
     if uvis == 'both':
