@@ -1,3 +1,4 @@
+# pylint: disable=E1101
 """
 WFC3/UVIS spatial scan monitor.
 
@@ -15,19 +16,19 @@ Use
             [TARGETS] --filters [FILTERS] --file_type FILE_TYPE --ap_phot_fcr
 
 """
+from copy import copy
+from glob import glob
+import os
+import shutil
 
 from astropy.io import fits
 from astropy.table import Table, vstack
 from astropy.time import Time
 from astroquery.mast import Observations
-from glob import glob
-import logging
 from matplotlib.colors import LogNorm
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 import photutils.segmentation as phot_seg
-import shutil
 
 from wfc3_phot_tools.spatial_scan import phot_tools
 from wfc3_phot_tools.spatial_scan.cr_reject import make_crcorr_file_scan_wfc3
@@ -101,28 +102,27 @@ def assess_scan_quality(data, ap_info, verbose, log, plot=True):
     """
     use_scan = True
 
-    threshold = phot_seg.detect_threshold(data, nsigma=5)
+    threshold = phot_seg.detect_threshold(data, nsigma=4)
     seg_img = phot_seg.detect_sources(data, threshold=threshold, npixels=250)
 
     if seg_img is None:
-        display_message(verbose=verbose,
-                        log=log,
-                        log_type='error',
+        display_message(verbose=verbose, log=log, log_type='error',
                         message='Could not find a source. Will not use this '\
                                 'observation for photometry.')
         use_scan = False
-        tbl = None
+        rind_dims = None
 
     else:
         cat = phot_seg.SourceCatalog(data, seg_img)
         tbl = cat.to_table()
 
-        rind_fits = check_rind_parameters(data,
-                                          tbl['xcentroid'][0],
-                                          tbl['ycentroid'][0],
-                                          ap_info['sky_ap_dim'],
-                                          ap_info['sky_thickness'],
-                                          verbose, log)
+        rind_fits, rind_dims = check_rind_parameters(data,
+                                                     tbl['xcentroid'][0],
+                                                     tbl['ycentroid'][0],
+                                                     ap_info['sky_ap_dim'],
+                                                     ap_info['sky_thick_x'],
+                                                     ap_info['sky_thick_y'],
+                                                     verbose, log)
         angle_good = check_scan_angle(tbl['orientation'][0].value, verbose, log)
         shape_good = check_source_shape(tbl['eccentricity'][0].value,
                                         #tbl['semimajor_sigma'][0].value,
@@ -133,32 +133,30 @@ def assess_scan_quality(data, ap_info, verbose, log, plot=True):
             use_scan = True
         else:
             use_scan = False
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='error',
+            display_message(verbose=verbose, log=log, log_type='error',
                             message='\tWill not use this scan for photometry.')
 
         if plot:
-            fig, ax = plt.subplots(1,2,figsize=(14,7))
-            ax[0].imshow(data, origin='lower', norm=LogNorm())
-            ax[1].imshow(seg_img.data, origin='lower')
+            fig, axes = plt.subplots(1, 2, figsize=(14,7))
+            axes[0].imshow(data, origin='lower', norm=LogNorm())
+            axes[1].imshow(seg_img.data, origin='lower')
             fig.tight_layout()
             plt.show()
             plt.close()
 
-    return use_scan, tbl
+    return use_scan, rind_dims
 
 
-def calc_phot_wrapper(scan_obj, data_type, verbose, log, show=False):
+def calc_phot_wrapper(scan_obj, data_type):
     """
     Wrapper for calculating the sky-subtracted photometry
     inside a photometric aperture, as well as the error.
 
     Parameters
     ----------
-    scan_obj :  `obsScan`
+    scan_obj :  `ObsScan`
         A scan observation object constructed through the
-        class `obsScan`.
+        class `ObsScan`.
     data_type : string
         Either 'flt' or 'fcr', denoting which data
         extension to use (flt_data or fcr_data, both of
@@ -182,10 +180,8 @@ def calc_phot_wrapper(scan_obj, data_type, verbose, log, show=False):
         Error in the calculation of the sky-subtracted
         photometric flux, in units of counts per second.
     """
-    if show:
-        plt_title=f'{scan_obj.header_info["rootname"]} - {data_type.upper()}'
-    else:
-        plt_title=None
+    show = scan_obj.args.show_ap_plot
+    plt_title=f'{scan_obj.header_info["rootname"]} - {data_type.upper()}'
 
     if data_type == 'flt':
         data_attr = scan_obj.flt_data
@@ -200,15 +196,12 @@ def calc_phot_wrapper(scan_obj, data_type, verbose, log, show=False):
                                                      theta=scan_obj.theta,
                                                      show=show,
                                                      plt_title=plt_title)
-
     flux_uncorr = phot_table['aperture_sum'][0]
 
-    display_message(verbose=verbose,
-                    log=log,
+    display_message(verbose=scan_obj.args.verbose, log=scan_obj.args.log,
                     message='Uncorrected flux in photometric aperture:\n'\
                             f'\t{flux_uncorr} electrons/second\n'\
-                            f'\t{flux_uncorr*scan_obj.header_info["exptime"]} electrons',
-                    log_type='info')
+                            f'\t{flux_uncorr*scan_obj.header_info["exptime"]} electrons')
 
     # convert source sum back to electrons for error calculation
     flux_uncorr_e = scan_obj.header_info['exptime'] * flux_uncorr
@@ -222,12 +215,10 @@ def calc_phot_wrapper(scan_obj, data_type, verbose, log, show=False):
         back_e = scan_obj.header_info['exptime'] * scan_obj.fcr_back
         back_rms_e = scan_obj.header_info['exptime'] * scan_obj.fcr_back_rms
 
-    display_message(verbose=verbose,
-                    log=log,
-                    message=f'Background {scan_obj.back_method} level in sky aperture:\n'\
+    display_message(verbose=scan_obj.args.verbose, log=scan_obj.args.log,
+                    message=f'Background {scan_obj.args.back_method} level in sky aperture:\n'\
                             f'\t{back_e / scan_obj.header_info["exptime"]} electrons/second\n'\
-                            f'\t{back_e} electrons',
-                    log_type='info')
+                            f'\t{back_e} electrons')
 
     flux_err = compute_phot_err_daophot(flux=flux_uncorr_e,
                                         back=back_e,
@@ -238,12 +229,10 @@ def calc_phot_wrapper(scan_obj, data_type, verbose, log, show=False):
     # convert error to count rate
     flux_err = flux_err / scan_obj.header_info['exptime']
 
-    display_message(verbose=verbose,
-                    log=log,
+    display_message(verbose=scan_obj.args.verbose, log=scan_obj.args.log,
                     message='Subtracting background for all pixels in sky aperture:\n'\
                             f'\t{(back_e * scan_obj.ap_info["ap_area"]) / scan_obj.header_info["exptime"]} electrons/second\n'\
-                            f'\t{back_e * scan_obj.ap_info["ap_area"]} electrons',
-                    log_type='info')
+                            f'\t{back_e * scan_obj.ap_info["ap_area"]} electrons')
 
     # subtract background median times photometric area,
     # then convert back to count rate
@@ -251,17 +240,15 @@ def calc_phot_wrapper(scan_obj, data_type, verbose, log, show=False):
 
     flux = flux_e / scan_obj.header_info['exptime']
 
-    display_message(verbose=verbose,
-                    log=log,
+    display_message(verbose=scan_obj.args.verbose, log=scan_obj.args.log,
                     message='Total sky-subtracted flux in photometric aperture:\n'\
                             f'\t{flux} electrons/second\n'\
-                            f'\t{flux_e} electrons',
-                    log_type='info')
+                            f'\t{flux_e} electrons')
 
     return flux, flux_err
 
 
-def calc_sky_ap_area(sky_ap_dim, sky_thickness):
+def calc_sky_ap_area(sky_ap_dim, sky_thick_x, sky_thick_y):
     """
     Helper function to calculate the area of the sky
     background aperture given the inner dimensions and the
@@ -283,22 +270,24 @@ def calc_sky_ap_area(sky_ap_dim, sky_thickness):
         in units of squared pixels.
     """
     inner_area = sky_ap_dim[0] * sky_ap_dim[1]
-    outer_area = (sky_ap_dim[0] + (2*sky_thickness)) * (sky_ap_dim[1] + (2*sky_thickness))
+
+    outer_area = calc_outer_dimension(sky_ap_dim[0], sky_thick_x) * \
+                    calc_outer_dimension(sky_ap_dim[1], sky_thick_y)
     sky_ap_area = outer_area - inner_area
 
     return sky_ap_area
 
 
-def calc_sky_wrapper(scan_obj, data_type, verbose, log):
+def calc_sky_wrapper(scan_obj, data_type):
     """
     Wrapper for calculating the background sky level per
     pixel.
 
     Parameters
     ----------
-    scan_obj : `obsScan`
+    scan_obj : `ObsScan`
         A scan observation object constructed through the
-        class `obsScan`.
+        class `ObsScan`.
     data_type : string
         Either 'flt' or 'fcr', denoting which data
         extension to use (flt_data or fcr_data, both of
@@ -319,26 +308,58 @@ def calc_sky_wrapper(scan_obj, data_type, verbose, log):
         level inside the sky aperture, in units of counts
         per second.
     """
+
     if data_type == 'flt':
-        data_attr = scan_obj.flt_data
+        data_attr = copy(scan_obj.flt_data)
     else:
-        data_attr = scan_obj.fcr_data
+        data_attr = copy(scan_obj.fcr_data)
 
     with CaptureOutput() as output:
-        back, back_rms = phot_tools.calc_sky(data=data_attr,
-                                             x_pos=scan_obj.x_pos,
-                                             y_pos=scan_obj.y_pos,
-                                             source_mask_len=scan_obj.ap_info['sky_ap_dim'][1],
-                                             source_mask_width=scan_obj.ap_info['sky_ap_dim'][0],
-                                             n_pix=scan_obj.ap_info['sky_thickness'],   # this needs to remain n_pix
-                                             method=scan_obj.back_method)
+        if len(scan_obj.args.sky_thick_x) == 1 \
+            & len(scan_obj.args.sky_thick_y) == 1 \
+            & scan_obj.args.sky_thick_x == scan_obj.args.sky_thick_y:
+            back, back_rms = phot_tools.calc_sky(data=data_attr,
+                                                 x_pos=scan_obj.x_pos,
+                                                 y_pos=scan_obj.y_pos,
+                                                 source_mask_len=scan_obj.ap_info['sky_ap_dim'][1],
+                                                 source_mask_width=scan_obj.ap_info['sky_ap_dim'][0],
+                                                 n_pix=scan_obj.ap_info['sky_thick_x'],
+                                                 method=scan_obj.args.back_method)
+        else:
+            x_l, x_r, y_b, y_t = scan_obj.rind_dims
+            rind_data = data_attr
 
-    display_message(verbose=args.verbose,
-                    log=args.log,
-                    message=output,
-                    log_type='info')
+            # Mask inside - zeroth items are the inner dimensions.
+            rind_data[int(y_b[0]):int(y_t[0]), int(x_l[0]):int(x_r[0])] = np.nan
+
+            # Mask outside - first items are the outer dimensions.
+            rind_data[:, :x_l[1]] = np.nan
+            rind_data[:y_b[1], :] = np.nan
+            rind_data[:, x_r[1]:] = np.nan
+            rind_data[y_t[1]:, :] = np.nan
+
+            back, back_rms = phot_tools.calc_sky(data=rind_data,
+                                                 data_is_cutout=True,
+                                                 method=scan_obj.args.back_method)
+
+    display_message(verbose=scan_obj.args.verbose, log=scan_obj.args.log,
+                    message=output)
 
     return back, back_rms
+
+
+def calc_outer_dimension(ap_dim, thick):
+    """
+    Helper function to calculate the outer dimension.
+    """
+    if len(thick) == 1:
+        outer_dim = ap_dim + (2 * thick[0])
+    elif len(thick) == 2:
+        outer_dim = ap_dim + (thick[0] + thick[1])
+    else:
+        outer_dim = None
+
+    return outer_dim
 
 
 def check_file(filepath, verbose, log):
@@ -375,43 +396,40 @@ def check_file(filepath, verbose, log):
         try:
             data_ext = data_exts[file_type]
         except KeyError:
-            display_message(verbose=verbose,
-                            log=log,
-                            message=f'File is not FCR or FLT: {os.path.basename(filepath)}',
-                            log_type='error')
+            display_message(verbose=verbose, log=log, log_type='error',
+                            message='File is not FCR or FLT: '\
+                                    f'{os.path.basename(filepath)}')
             return None, None
 
         try:
-            with fits.open(filepath) as f:
-                _ = f[0].header
+            with fits.open(filepath) as file:
+                _ = file[0].header
 
             return file_type, data_ext
 
         except OSError:
-            display_message(verbose=verbose,
-                            log=log,
-                            message=f'Corrupt or empty FITS file: {os.path.basename(filepath)}',
-                            log_type='error')
+            display_message(verbose=verbose, log=log, log_type='error',
+                            message='Corrupt or empty FITS file: '\
+                                    f' {os.path.basename(filepath)}')
 
             problem_fits_file = os.path.join(os.getcwd(), 'problem_fits.txt')
             if os.path.exists(problem_fits_file):
-                with open(problem_fits_file, 'a') as f:
-                    f.write(f'{filepath}\n')
+                with open(problem_fits_file, 'a') as opened_file:
+                    opened_file.write(f'{filepath}\n')
             else:
-                with open(problem_fits_file, 'w') as f:
-                    f.write(f'{filepath}\n')
+                with open(problem_fits_file, 'w') as opened_file:
+                    opened_file.write(f'{filepath}\n')
 
             return None, None
 
     else:
-        display_message(verbose,
-                        log,
-                        message=f'Specified filepath does not exist {filepath}',
-                        log_type='error')
+        display_message(verbose, log, log_type='error',
+                        message=f'Specified filepath does not exist {filepath}')
         return None, None
 
 
-def check_rind_parameters(data, scan_x, scan_y, sky_ap_dim, sky_thickness, verbose, log):
+def check_rind_parameters(data, scan_x, scan_y, sky_ap_dim,
+                          sky_thick_x, sky_thick_y, verbose, log):
     """
     Helper function to make sure that the entirety of the
     sky rind is in the subarray.
@@ -425,7 +443,7 @@ def check_rind_parameters(data, scan_x, scan_y, sky_ap_dim, sky_thickness, verbo
     sky_ap_dim : list of int
         The dimensions of the inner boundary of the sky
         background rind, in format [x_pixels, y_pixels].
-    sky_thickness : int
+    sky_thickness : int or list of int
         Width of the sky background rind in pixels.
     verbose : Boolean
         Whether to print the message.
@@ -439,33 +457,90 @@ def check_rind_parameters(data, scan_x, scan_y, sky_ap_dim, sky_thickness, verbo
         the subarray when centered on the detected source,
         indicating that the scan should be rejected.
     """
-    data_dims = data.shape
+    [x_l, x_r, y_b, y_t] = position_rind((scan_x, scan_y), data.shape,
+                                         sky_ap_dim, sky_thick_x, sky_thick_y)
 
-    ap_y = sky_ap_dim[1]/2.   # 400
-    ap_x = sky_ap_dim[0]/2.   # 300
+    # For the above list, each item is a tuple of format
+    # (dim_inner, dim_outer)
 
-    x_l = scan_x - ap_x - sky_thickness
-    x_r = scan_x + ap_x + sky_thickness
-
-    y_b = scan_y - ap_y - sky_thickness
-    y_t = scan_y + ap_y + sky_thickness
-
-
-    if (x_l > 10) and \
-       (y_b > 10) and \
-       (x_r < (data_dims[0] - 10)) and \
-       (y_t < (data_dims[1] - 10)):
+    if (x_l[1] > 10) and \
+       (y_b[1] > 10) and \
+       (x_r[1] < (data.shape[0] - 10)) and \
+       (y_t[1] < (data.shape[1] - 10)):
         rind_fits = True
 
     else:
         rind_fits = False
-        display_message(verbose=verbose,
-                        log=log,
-                        log_type='error',
+        display_message(verbose=verbose, log=log, log_type='error',
                         message='\tSky background rind will not '\
                                 'fit in the data array.')
 
-    return rind_fits
+    rind_dims = [x_l, x_r, y_b, y_t]
+
+    return rind_fits, rind_dims
+
+
+def assign_thick_xory(center_xory, data_dim_xory, thick_xory):
+    """
+    Helper function to assign the two thicknesses to the
+    left/right or top/bottom.
+
+    Don't laugh at the name of this function.
+
+    Parameters
+    ----------
+    center_xory : int or float
+    data_dim_xory : int
+    thick_xory : list of int
+    """
+    if len(thick_xory) == 1:
+        offset_lo = thick_xory[0]
+        offset_hi = thick_xory[0]
+
+    elif len(thick_xory) == 2:
+        dist = np.abs(data_dim_xory - center_xory)
+        if dist < data_dim_xory / 2:
+#        if center_xory < data_dim_xory / 2:
+            offset_lo = min(thick_xory)
+            offset_hi = max(thick_xory)
+        else:
+            offset_lo = max(thick_xory)
+            offset_hi = min(thick_xory)
+    else:
+        offset_lo = None
+        offset_hi = None
+
+    return offset_lo, offset_hi
+
+
+def position_rind(center, data_dims, sky_ap_dim, sky_thick_x, sky_thick_y):
+    """
+    Returns
+    -------
+    x_l, x_r, y_b, y_t
+    """
+    ap_x = sky_ap_dim[0] / 2.   # 300
+    ap_y = sky_ap_dim[1] / 2.   # 400
+
+    off_l, off_r = assign_thick_xory(center[0], data_dims[0], sky_thick_x)
+    off_b, off_t = assign_thick_xory(center[1], data_dims[1], sky_thick_y)
+
+    x_l_in = int(np.floor(center[0] - ap_x))
+    x_l_out = int(x_l_in - off_l)
+
+    x_r_in = int(np.ceil(center[0] + ap_x))
+    x_r_out = int(x_r_in + off_r)
+
+    y_b_in = int(np.floor(center[1] - ap_y))
+    y_b_out = int(y_b_in - off_b)
+
+    y_t_in = int(np.ceil(center[1] + ap_y))
+    y_t_out = int(y_t_in + off_t)
+
+    rind_dims = [(x_l_in, x_l_out), (x_r_in, x_r_out),
+                    (y_b_in, y_b_out), (y_t_in, y_t_out)]
+
+    return rind_dims
 
 
 def check_scan_angle(orientation, verbose, log):
@@ -499,9 +574,7 @@ def check_scan_angle(orientation, verbose, log):
         angle_good = True
     else:
         angle_good = False
-        display_message(verbose=verbose,
-                        log=log,
-                        log_type='error',
+        display_message(verbose=verbose, log=log, log_type='error',
                         message='\tScan angle is offset from the vertical by '\
                                 f'{offset:.4f} degrees.')
 
@@ -543,9 +616,7 @@ def check_source_shape(eccentricity, verbose, log):
         shape_good = True
 
     if not shape_good:
-        display_message(verbose=verbose,
-                        log=log,
-                        log_type='error',
+        display_message(verbose=verbose, log=log, log_type='error',
                         message=f'\tSource eccentricity is {eccentricity:.6f}')
 
     return shape_good
@@ -597,56 +668,6 @@ def get_header(data_ext, with_open_file):
     return hdr
 
 
-def get_header_info(scan_obj, verbose, log):
-    """
-    Helper function to extract needed header info into a
-    dictionary. Also resolves target names as stated in
-    fits file header using the `resolve_targnames()`
-    function.
-
-    Parameters
-    ----------
-    scan_obj :  `obsScan`
-        A scan observation object constructed through the
-        class `obsScan`.
-    verbose : Boolean
-        Whether to print the message.
-    log : Boolean
-        Whether to log the message.
-
-    Returns
-    -------
-    header_info : dict
-        Dictionary of stripped header information, wherein
-        keys correspond to header card names and values are
-        the header card values.
-    """
-    header_info = {}
-    keywords = ['rootname', 'proposid', 'targname', 'filter', 'aperture',       # set parameters
-                'expstart', 'exptime', 'linenum',                               # observing info
-                'ccdamp', 'ccdgain', 'ccdofsta', 'ccdofstc',                    # engineering parameters
-                'atodgna', 'readnsea', 'biasleva',                              # calibrated engineering parameters
-                'atodgnc', 'readnsec', 'biaslevc',                              # calibrated engineering parameters
-                'ang_side', 'scan_ang', 'scan_rat', 'scan_len',                 # scan keywords
-                'flashdur', 'flashcur', 'flashlvl', 'shutrpos',                  # postflash parameters
-                'photflam', 'phtflam1', 'phtflam2', 'phtratio',                 # time-dependent phot. cal.
-                'photfnu', 'photzpt', 'photbw', 'photplam',                     # time-dependent phot. cal.
-                'mdrizsky',                                                     # sky background as calc. by AstroDrizzle
-                'bpixtab', 'biasfile', 'flshfile', 'darkfile',                  # calibration files
-                'pfltfile', 'imphttab', 'drkcfile', 'snkcfile']                 # calibration files
-    for keyword in keywords:
-        if keyword == 'targname':
-            header_info[keyword] = resolve_targnames(targname=scan_obj.hdr[keyword.upper()],
-                                                     simplify=True,
-                                                     verbose=verbose,
-                                                     log=log)
-        header_info[keyword] = scan_obj.hdr[keyword.upper()]
-
-    header_info['expstart_decimalyear'] = get_decimalyear(header_info['expstart'])
-
-    return header_info
-
-
 def resolve_targnames(targname, simplify=True, verbose=True, log=False):
     """
     Helper functions to resolve target names. Sometimes
@@ -688,16 +709,15 @@ def resolve_targnames(targname, simplify=True, verbose=True, log=False):
                  'GRW70': 'GRW70',
                  'P330E': 'P330E',
                  'GSC-02581-02323': 'P330E',
-                 'TYC-4212-455-1': 'TYC-4212-455-1'}
+                 'TYC-4212-455-1': 'TYC-4212-455-1',
+                 'TYC': 'TYC-4212-455-1'}
     if simplify:
         try:
             resolved_targname = targnames[targname]
             resolved = resolved_targname
-        except KeyError as ke:
-            display_message(verbose=verbose,
-                            log=log,
-                            message=f'Warning! Unable to resolve name for {ke}',
-                            log_type='warning')
+        except KeyError as key_err:
+            display_message(verbose=verbose, log=log, log_type='warning',
+                            message=f'Unable to resolve name for {key_err}')
             resolved = targname
     else:
         resolved_targnames = [k for k, v in targnames.items() if v == targname]
@@ -746,9 +766,9 @@ def remove_non_scans(prods_p_t_f, proposal_ql_roots, verbose, log):
     removed_scans = starting_count - len(prods_p_t_f)
 
     if removed_scans > 0:
-        display_message(verbose=verbose, log=log, log_type='info',
-                        message=f'Removed {removed_scans} non-scan '\
-                                'observations from download queue.')
+        display_message(verbose=verbose, log=log, message='Removed '\
+                        f'{removed_scans} non-scan observations from '\
+                        'download queue.')
 
     return prods_p_t_f
 
@@ -796,38 +816,30 @@ def redownload_wrapper(prods_p_t_f, dir_p_t_f, redownload_data_flag,
             planned_path = os.path.join(dir_p_t_f,
                                         os.path.basename(planned_filename))
             if os.path.exists(planned_path):
-                display_message(verbose=verbose,
-                                log=log,
-                                message=f'Found existing file at {planned_path}.',
-                                log_type='info')
+                display_message(verbose=verbose, log=log, message='Found '\
+                                f'existing file at {planned_path}.')
                 prods_p_t_f = prods_p_t_f[prods_p_t_f['productFilename'] != planned_filename]
 
     number_removed = len(planned_filenames) - len(prods_p_t_f)
     if number_removed == 0:
-        display_message(verbose=verbose,
-                        log=log,
-                        message=f'Commencing download of {len(prods_p_t_f)} files...',
-                        log_type='info')
+        display_message(verbose=verbose, log=log, message='Commencing '\
+                        f'download of {len(prods_p_t_f)} files...')
         continue_download = True
     else:
         if len(prods_p_t_f) == 0:
-            display_message(verbose=verbose,
-                            log=log,
-                            message='All files in download queue already exist.',
-                            log_type='info')
+            display_message(verbose=verbose, log=log, message='All files in '\
+                            'download queue already exist.')
             continue_download = False
         else:
-            display_message(verbose=verbose,
-                            log=log,
-                            message=f'Removed {number_removed} files. '\
-                                    f'Commencing download of {len(prods_p_t_f)} files...',
-                            log_type='info')
+            display_message(verbose=verbose, log=log, message='Removed '\
+                            f'{number_removed} files. Commencing download of '\
+                            f'{len(prods_p_t_f)} files...')
             continue_download = True
 
     return prods_p_t_f, continue_download
 
 
-def retrieve_scan_data(dirs, verbose, log, **params):
+def retrieve_scan_data(args, dirs, **params):
     """
     Function to query MAST and download observations to the
     proper location.
@@ -853,17 +865,14 @@ def retrieve_scan_data(dirs, verbose, log, **params):
     -------
     download_manifest :
     """
-    display_message(verbose=verbose,
-                    log=log,
-                    message=f'Querying MAST for data matching specified parameters:\n{params}',
-                    log_type='info')
+    display_message(verbose=args.verbose, log=args.log,
+                    message='Querying MAST for data matching specified '\
+                            f'parameters:\n{params}')
 
     download_manifest = Table()
     obs = Observations.query_criteria(**params)
-    display_message(verbose=verbose,
-                    log=log,
-                    log_type='info',
-                    message=f'Found {len(obs)} matching observations.')
+    display_message(verbose=args.verbose, log=args.log, message='Found '\
+                    f'{len(obs)} matching observations.')
 
     if len(obs) > 0:
         # 3 levels of organization:
@@ -880,22 +889,21 @@ def retrieve_scan_data(dirs, verbose, log, **params):
             proposal_ql_roots = [r.ql_root for r in proposal_ql]
 
             dir_p = check_subdirectory(parent_dir=dirs['data_dir'],
-                                       sub_name=proposal,
-                                       verbose=verbose,
-                                       log=log)
+                                       sub_name=proposal, verbose=args.verbose,
+                                       log=args.log)
 
             # resolve (simplify) target names:
-            obs_p['resolved_target_name'] = [resolve_targnames(t) for t in obs_p['target_name']]
+            obs_p['resolved_target_name'] = [resolve_targnames(t)
+                                             for t in obs_p['target_name']]
 
             # make list of tables by target for each proposal
             targets = sorted(list(set(obs_p['resolved_target_name'])))
-            obs_p_ts = [obs_p[obs_p['resolved_target_name'] == t] for t in targets]
+            obs_p_ts = [obs_p[obs_p['resolved_target_name'] == t]
+                        for t in targets]
 
             for target, obs_p_t in zip(targets, obs_p_ts):
-                dir_p_t = check_subdirectory(parent_dir=dir_p,
-                                             sub_name=target,
-                                             verbose=verbose,
-                                             log=log)
+                dir_p_t = check_subdirectory(parent_dir=dir_p, sub_name=target,
+                                             verbose=args.verbose, log=args.log)
 
                 # make list of tables by filter for each proposal/target
                 filters = sorted(list(set(obs_p_t['filters'])))
@@ -904,8 +912,8 @@ def retrieve_scan_data(dirs, verbose, log, **params):
                 for filt, obs_p_t_f in zip(filters, obs_p_t_fs):
                     dir_p_t_f = check_subdirectory(parent_dir=dir_p_t,
                                                    sub_name=filt,
-                                                   verbose=verbose,
-                                                   log=log)
+                                                   verbose=args.verbose,
+                                                   log=args.log)
 
                     # get all products in the proposal/target/filter table
                     all_prods_p_t_f = Observations.get_product_list(obs_p_t_f)
@@ -913,14 +921,13 @@ def retrieve_scan_data(dirs, verbose, log, **params):
                     # filter to only the FLT files
                     prods_p_t_f = Observations.filter_products(all_prods_p_t_f,
                                                                productSubGroupDescription='FLT')
-                    display_message(verbose=verbose,
-                                    log=log,
-                                    log_type='info',
+                    display_message(verbose=args.verbose, log=args.log,
                                     message='Filtered to just FLTs')
 
                     # remove non scans
-                    prods_p_t_f = remove_non_scans(prods_p_t_f, proposal_ql_roots,
-                                                    args.verbose, args.log)
+                    prods_p_t_f = remove_non_scans(prods_p_t_f,
+                                                   proposal_ql_roots,
+                                                   args.verbose, args.log)
 
                     # If the file already exists in desired location,
                     # remove from product list if redownload is set to False
@@ -991,31 +998,22 @@ def get_new_data(args, dirs):
     """
     if args.targets == 'core':
         if args.filters == 'core':
-            download_manifest = retrieve_scan_data(dirs,
-                                                   verbose=args.verbose,
-                                                   log=args.log,
-                                                   proposal_id=args.proposals)
+            download_manifest = retrieve_scan_data(args, dirs)
         else:
-            download_manifest = retrieve_scan_data(dirs,
-                                                   verbose=args.verbose,
-                                                   log=args.log,
+            download_manifest = retrieve_scan_data(args, dirs,
                                                    proposal_id=args.proposals,
-                                                   filters=filters)
+                                                   filters=args.filters)
     else:
         search_targets = []
         for targname in args.targets:
             search_targets.extend(resolve_targnames(targname, simplify=False))
 
         if args.filters == 'core':
-            download_manifest = retrieve_scan_data(dirs,
-                                                   verbose=args.verbose,
-                                                   log=args.log,
+            download_manifest = retrieve_scan_data(args, dirs,
                                                    proposal_id=args.proposals,
                                                    target_name=search_targets)
         else:
-            download_manifest = retrieve_scan_data(dirs,
-                                                   verbose=args.verbose,
-                                                   log=args.log,
+            download_manifest = retrieve_scan_data(args, dirs,
                                                    proposal_id=args.proposals,
                                                    target_name=search_targets,
                                                    filters=args.filters)
@@ -1047,21 +1045,20 @@ def run_process_wrapper(args, dirs):
         else:
             process_name = None
 
-    if isinstance(process_name, type(None)):
-        display_message(verbose=args.verbose,
-                        log=args.log,
-                        log_type='info',
+    if process_name is None:
+        display_message(verbose=args.verbose, log=args.log,
                         message='Cosmic ray rejection and aperture photometry '\
                                 'flags are both set to `False`.')
     else:
-        proposals = sorted([os.path.basename(x)
-                            for x in glob(f'{dirs["data_dir"]}/*')])
+        prop_list = [int(os.path.basename(x))
+                     for x in glob(f'{dirs["data_dir"]}/*')]
+
+        proposals = [int(x) for x in sorted([os.path.basename(x)
+                     for x in glob(f'{dirs["data_dir"]}/*')])]
 
         for proposal in proposals:
-            if int(proposal) in [int(p) for p in args.proposals]:
-                display_message(verbose=args.verbose,
-                                log=args.log,
-                                log_type='info',
+            if proposal in [int(p) for p in args.proposals]:
+                display_message(verbose=args.verbose, log=args.log,
                                 message=f'Beginning {process_name} for Program {proposal}')
 
                 targets = sorted([os.path.basename(x)
@@ -1069,9 +1066,7 @@ def run_process_wrapper(args, dirs):
 
                 for target in targets:
                     if target in args.targets:
-                        display_message(verbose=args.verbose,
-                                        log=args.log,
-                                        log_type='info',
+                        display_message(verbose=args.verbose, log=args.log,
                                         message=f'Beginning {process_name} for {target}')
 
                         filters = sorted([os.path.basename(x)
@@ -1079,66 +1074,63 @@ def run_process_wrapper(args, dirs):
 
                         for filt in filters:
                             if filt in args.filters:
-                                display_message(verbose=args.verbose,
-                                                log=args.log,
-                                                log_type='info',
+                                display_message(verbose=args.verbose, log=args.log,
                                                 message=f'Beginning {process_name} for {filt}')
 
                                 if args.file_type == 'flt':   # if we want anything from FLT files, then we'll start with the FLT files
                                     display_message(verbose=args.verbose,
                                                     log=args.log,
-                                                    log_type='info',
                                                     message='Starting with FLT files.')
                                     filepaths = glob(f'{dirs["data_dir"]}/{proposal}/{target}/{filt}/*flt.fits')
 
                                 else: # otherwise, start with the FCR files
                                     display_message(verbose=args.verbose,
                                                     log=args.log,
-                                                    log_type='info',
                                                     message='Starting with FCR files.')
                                     filepaths = glob(f'{dirs["data_dir"]}/{proposal}/{target}/{filt}/*fcr.fits')
 
                                 if len(filepaths) > 0:
                                     display_message(verbose=args.verbose,
                                                     log=args.log,
-                                                    log_type='info',
                                                     message='Will process the following files: ')
-                                    #filepaths = np.roll(sorted(filepaths), -10)   ### TK why is this here?
+
                                     for filepath in filepaths:
+                                        fpm = f'\t{filepath.split("/")[-1]}'
                                         display_message(verbose=args.verbose,
                                                         log=args.log,
-                                                        log_type='info',
-                                                        message=f'\t{filepath.split("/")[-1]}')
+                                                        message=fpm)
 
-                                    run_process(filepaths=filepaths,
-                                                args=args,
-                                                dirs=dirs,
-                                                phot_table_name=f'{proposal}_{target}_{filt}.csv',
+                                    csv = f'{proposal}_{target}_{filt}.csv'
+                                    run_process(filepaths=filepaths, args=args,
+                                                dirs=dirs, phot_table_name=csv,
                                                 write_loc=f'{dirs["output_dir"]}',
-                                                write=True,
-                                                overwrite=True)
-
+                                                write=True, overwrite=True)
 
                                 else:
+                                    message = 'Did not find matching files '\
+                                              f'in {dirs["data_dir"]}/'\
+                                              f'{proposal}/{target}/{filt}'
                                     display_message(verbose=args.verbose,
                                                     log=args.log,
-                                                    log_type='info',
-                                                    message=f'Did not find any matching files in {dirs["data_dir"]}/{proposal}/{target}/{filt}')
+                                                    message=message)
                             else:
+                                message = f"Skipping {proposal}/{target}/"\
+                                          f"{filt} in data directory because "\
+                                          "that subset is not specified in "\
+                                          "the parameters."
                                 display_message(verbose=args.verbose,
-                                                log=args.log,
-                                                log_type='info',
-                                                message=f"Skipping {proposal}/{target}/{filt} in data directory since it's not specified in the parameters.")
+                                                log=args.log, message=message)
                     else:
-                        display_message(verbose=args.verbose,
-                                        log=args.log,
-                                        log_type='info',
-                                        message=f"Skipping {proposal}/{target} in data directory since it's not specified in the parameters.")
+                        message = f"Skipping {proposal}/{target} in data "\
+                                  "directory because that subset is not "\
+                                  "specified in the parameters."
+                        display_message(verbose=args.verbose, log=args.log,
+                                        message=message)
             else:
-                display_message(verbose=args.verbose,
-                                log=args.log,
-                                log_type='info',
-                                message=f"Skipping {proposal} in data directory since it's not specified in the parameters")
+                message = f"Skipping {proposal} in data directory because "\
+                          "that subset is not specified in the parameters."
+                display_message(verbose=args.verbose, log=args.log,
+                                message=message)
 
 
 def set_tbl_path(phot_table_name, write_loc, overwrite, verbose=True, log=False):
@@ -1160,9 +1152,7 @@ def set_tbl_path(phot_table_name, write_loc, overwrite, verbose=True, log=False)
         phot_table_name = f'{phot_table_name}.csv'
 
     if not os.path.exists(write_loc):
-        display_message(verbose=verbose,
-                        log=log,
-                        log_type='warning',
+        display_message(verbose=verbose, log=log, log_type='warning',
                         message=f'Warning: Nonexistent path {write_loc}\n'\
                                 'Using current working directory instead.')
         write_loc = os.getcwd()
@@ -1171,19 +1161,16 @@ def set_tbl_path(phot_table_name, write_loc, overwrite, verbose=True, log=False)
 
     if os.path.exists(full_tbl_path):
         if overwrite:
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='warning',
-                            message=f'Warning: Existing table at {full_tbl_path} and '\
-                                    '`overwrite` is set to True.')
+            message = f'Warning: Existing table at {full_tbl_path} and '\
+                      '`overwrite` is set to True.'
+            display_message(verbose=verbose, log=log, log_type='warning',
+                            message=message)
         else:
             exception_message = f'Existing table at {full_tbl_path} but '\
                                 '`overwrite` is set to False.\n'\
                                 'Aborting run. Please try again with '\
                                 'compatible arguments.'
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='critical',
+            display_message(verbose=verbose, log=log, log_type='critical',
                             message=exception_message)
             raise Exception(exception_message)
 
@@ -1217,15 +1204,11 @@ def remove_failed_scans(filepaths, verbose, log):
     filepaths = [f for f in filepaths
                  if os.path.basename(f).split('_')[0][:-1] not in failures]
 
-    display_message(verbose=verbose,
-                    log=log,
-                    log_type='info',
-                    message=f'Removed {len(failures)} scans affected by guide star failures.')
+    display_message(verbose=verbose, log=log, message='Removed '\
+                    f'{len(failures)} scans affected by guide star failures.')
 
-    display_message(verbose=verbose,
-                    log=log,
-                    log_type='info',
-                    message=f'Beginning processing set of {len(filepaths)} files.')
+    display_message(verbose=verbose, log=log, message='Beginning processing '\
+                    f'set of {len(filepaths)} files.')
 
     return filepaths
 
@@ -1265,11 +1248,12 @@ def run_process(filepaths,
         indicated by `filepaths`.
     """
     if write:
+         # aborts if overwrite is False but table exists!
         full_tbl_path = set_tbl_path(phot_table_name=phot_table_name,
                                      write_loc=write_loc,
                                      overwrite=overwrite,
                                      verbose=args.verbose,
-                                     log=args.log)   # aborts if overwrite is False but table exists!
+                                     log=args.log)
     rows = []
     filepaths = remove_failed_scans(filepaths,
                                     verbose=args.verbose,
@@ -1277,22 +1261,19 @@ def run_process(filepaths,
 
     for i, filepath in enumerate(filepaths):
         if filepath == f'{dirs["data_dir"]}/15398/GD153/F225W/ids0f0vpq_flt.fits':
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='warning',
-                            message='skipping over ids0f0vpq_flt.fits since it causes a critical error:')
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='error',
-                            message='\tv = data[:, j]\n\t\tIndexError: index 513 is out  of bounds for axis 1 with size 513')
+            display_message(verbose=args.verbose, log=args.log,
+                            log_type='warning', message='skipping ids0f0vpq '\
+                            'since it triggers a critical error:')
+            display_message(verbose=args.verbose, log=args.log,
+                            log_type='error', message='\tv = data[:, j]\n'\
+                            '\t\tIndexError: index 513 is out  of bounds for '\
+                            'axis 1 with size 513')
 
         else:
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='info',
+            display_message(verbose=args.verbose, log=args.log,
                             message=f'***File {i+1}/{len(filepaths)}***: ')
 
-            file_scan = obsScan(filepath, args)
+            file_scan = ObsScan(filepath, args)
 
             if file_scan.is_valid_file:
                 if args.run_cr_reject:
@@ -1304,27 +1285,31 @@ def run_process(filepaths,
                     else:
                         find_sources_data = file_scan.flt_data
 
-                    detected = file_scan.detect_sources(args, data=find_sources_data)
+                    detected = file_scan.detect_sources(data=find_sources_data)
 
                     if detected:
+                        ap_area = args.ap_dim[0]*args.ap_dim[1]
+                        sky_ap_area = calc_sky_ap_area(args.sky_ap_dim,
+                                                       args.sky_thick_x,
+                                                       args.sky_thick_y)
+
                         file_scan.ap_info = {'ap_dim': args.ap_dim,
                                              'sky_ap_dim': args.sky_ap_dim,
-                                             'sky_thickness': args.sky_thickness,
-                                             'sky_ap_area': calc_sky_ap_area(args.sky_ap_dim, args.sky_thickness),
-                                             'ap_area': args.ap_dim[0]*args.ap_dim[1]}
+                                             'sky_thick_x': args.sky_thick_x,
+                                             'sky_thick_y': args.sky_thick_y,
+                                             'sky_ap_area': sky_ap_area,
+                                             'ap_area': ap_area}
 
-                        use_scan, _ = assess_scan_quality(find_sources_data,
-                                                          file_scan.ap_info,
-                                                          verbose=args.verbose,
-                                                          log=args.log,
-                                                          plot=False)
+                        use_scan, dims = assess_scan_quality(find_sources_data,
+                                                             file_scan.ap_info,
+                                                             verbose=args.verbose,
+                                                             log=args.log,
+                                                             plot=False)
                         if use_scan:
-                            file_scan.calculate_phot(args,
-                                                     flt_data=args.ap_phot_flt,
-                                                     fcr_data=args.ap_phot_fcr)
+                            file_scan.rind_dims = dims
+                            file_scan.calculate_phot()
 
-                            scan_row = file_scan.make_scan_row(flt_data=args.ap_phot_flt,
-                                                               fcr_data=args.ap_phot_fcr)
+                            scan_row = file_scan.make_scan_row()
                             rows.append(scan_row)
 
             del file_scan
@@ -1335,19 +1320,17 @@ def run_process(filepaths,
         if write:
             display_message(verbose=args.verbose,
                             log=args.log,
-                            log_type='info',
-                            message='Saving photometry table '\
-                                    f'to {full_tbl_path}...')
+                            message='Saving photometry table to '\
+                                    f'{full_tbl_path}...')
 
             phot_table.write(full_tbl_path, format='csv', overwrite=overwrite)
 
             display_message(verbose=args.verbose,
                             log=args.log,
-                            log_type='info',
                             message='Table successfully saved.')
 
 
-class obsScan:
+class ObsScan:
     """
     A class to represent a UVIS scan observation. Requires
     two attributes to initialize, and has four methods to
@@ -1381,7 +1364,7 @@ class obsScan:
         """
         Parameters
         ----------
-        self : `obsScan` object
+        self : `ObsScan` object
             Scan.
         filepath : str or path-like
             String representation of path to scan
@@ -1389,33 +1372,101 @@ class obsScan:
         args : `argparse.Namespace` or `InteractiveArgs`
             Arguments.
         """
+        self.args = args
+
         self.filepath = filepath
+        self.fcr_filepath = None
+        self.mask_filepath = None
+
+        self.ap_info = None
+        self.fcr_hdr = None
+        self.mask_data = None
+        self.source_tbl = None
+        self.x_pos = None
+        self.y_pos = None
+        self.theta = None
+        self.flt_phot = None
+        self.flt_phot_rms = None
+        self.fcr_phot = None
+        self.fcr_phot_rms = None
+        self.flt_back = None
+        self.flt_back_rms = None
+        self.fcr_back = None
+        self.fcr_back_rms = None
+        self.rind_dims = None
+
         self.file_type, self.data_ext = check_file(self.filepath,
-                                                   verbose=args.verbose,
-                                                   log=args.log)
-        if isinstance(self.file_type, type(None)):
-            display_message(verbose=args.verbose, log=args.log,
+                                                   verbose=self.args.verbose,
+                                                   log=self.args.log)
+        if self.file_type is None:
+            display_message(verbose=self.args.verbose, log=self.args.log,
                             log_type='critical',
-                            message='Cannot construct obsScan object from '\
+                            message='Cannot construct ObsScan object from '\
                                     f'file: {filepath}')
             self.is_valid_file = False
 
         else:
             self.is_valid_file = True
-            with fits.open(self.filepath) as f:
-                self.hdr = get_header(self.data_ext, f)
+            with fits.open(self.filepath) as file:
+                self.hdr = get_header(self.data_ext, file)
 
                 if self.file_type == 'flt':
-                    self.flt_data = f[self.data_ext].data
-                    self.flt_units = f[self.data_ext].header['BUNIT']
+                    self.flt_data = file[self.data_ext].data
+                    self.flt_units = file[self.data_ext].header['BUNIT']
 
                 else:
-                    self.fcr_data = f[self.data_ext].data
-                    self.fcr_units = f[self.data_ext].header['BUNIT']
+                    self.fcr_data = file[self.data_ext].data
+                    self.fcr_units = file[self.data_ext].header['BUNIT']
 
-            self.header_info = get_header_info(self,
-                                               verbose=args.verbose,
-                                               log=args.log)
+            self.get_header_info()
+
+
+    def get_header_info(self):
+        """
+        Helper function to extract needed header info into a
+        dictionary. Also resolves target names as stated in
+        fits file header using the `resolve_targnames()`
+        function.
+
+        Parameters
+        ----------
+        self :  `ObsScan`
+            A scan observation object constructed through the
+            class `ObsScan`.
+
+        Returns
+        -------
+        header_info : dict
+            Dictionary of stripped header information, wherein
+            keys correspond to header card names and values are
+            the header card values.
+        """
+        hdr_info = {}
+
+        keywords = ['rootname', 'proposid', 'targname', 'filter', 'aperture',
+                    'expstart', 'exptime', 'linenum', # observing info
+                    'ccdamp', 'ccdgain', 'ccdofsta', 'ccdofstc', # eng params
+                    'atodgna', 'readnsea', 'biasleva', # cal eng params
+                    'atodgnc', 'readnsec', 'biaslevc', # cal eng params
+                    'ang_side', 'scan_ang', 'scan_rat', 'scan_len', # scan keys
+                    'flashdur', 'flashcur', 'flashlvl', 'shutrpos', # postflash
+                    'photflam', 'phtflam1', 'phtflam2', 'phtratio', # TDS cal
+                    'photfnu', 'photzpt', 'photbw', 'photplam', # TDS cal
+                    'mdrizsky',  # sky background as calc. by AstroDrizzle
+                    'bpixtab', 'biasfile', 'flshfile', 'darkfile',  # cal files
+                    'pfltfile', 'imphttab', 'drkcfile', 'snkcfile']  # cal files
+        for keyword in keywords:
+            if keyword == 'targname':
+                targname = self.hdr[keyword.upper()]
+                hdr_info[keyword] = resolve_targnames(targname=targname,
+                                                      simplify=True,
+                                                      verbose=self.args.verbose,
+                                                      log=self.args.log)
+            hdr_info[keyword] = self.hdr[keyword.upper()]
+
+        hdr_info['expstart_decimalyear'] = get_decimalyear(hdr_info['expstart'])
+
+        self.header_info = hdr_info
 
 
     def apply_crrej(self, args, output_dir=None, write_mask=True):
@@ -1434,7 +1485,7 @@ class obsScan:
 
         Parameters
         ----------
-        self : `obsScan` object
+        self : `ObsScan` object
             Scan.
         args : `argparse.Namespace` or `InteractiveArgs`
             Arguments.
@@ -1450,19 +1501,14 @@ class obsScan:
         if isinstance(output_dir, type(None)):
             output_dir = self.filepath.split(os.path.basename(self.filepath))[0]
 
-        fcr_filename = os.path.basename(self.filepath).replace('flt.fits', 'fcr.fits')
+        fcr_filename = os.path.basename(self.filepath).\
+                        replace('flt.fits', 'fcr.fits')
         self.fcr_filepath = os.path.join(output_dir, fcr_filename)
 
-        if os.path.exists(self.fcr_filepath):  # if the FCR already exists
-            if args.reprocess_fcr:             # and we said to reprocess
-                make_fcr = True                # then we'll run CR rejection
-            else:                              # and we said not to reprocess
-                make_fcr = False               # then we'll just grab the existing data
-        else:                                  # if the FCR doesn't exist
-            #if args.ap_phot_fcr:               # and we'll need to do photometry on FCR data
-            make_fcr = True                # then we'll run CR rejection
-
-
+        if os.path.exists(self.fcr_filepath):
+            make_fcr = bool(args.reprocess_fcr)
+        else:
+            make_fcr = True
 
         if make_fcr:
             with CaptureOutput() as outputs:
@@ -1472,33 +1518,28 @@ class obsScan:
                                                      write_mask=write_mask)
 
             for output in outputs:
-                display_message(verbose=args.verbose,
-                                log=args.log,
-                                log_type='info',
+                display_message(verbose=self.args.verbose, log=self.args.log,
                                 message=output)
         else:
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='info',
-                            message=f'Using FCR file found at: {self.fcr_filepath}')
+            display_message(verbose=self.args.verbose, log=self.args.log,
+                            message='Using FCR file found at: '\
+                                    f'{self.fcr_filepath}')
 
-        with fits.open(self.fcr_filepath) as f:
-            self.fcr_hdr = f[0].header
-            self.fcr_data = f[0].data
+        with fits.open(self.fcr_filepath) as file:
+            self.fcr_hdr = file[0].header
+            self.fcr_data = file[0].data
             self.fcr_units = self.fcr_hdr['BUNIT']
 
             if write_mask:
-                self.mask_filepath = os.path.join(output_dir,
-                                                  os.path.basename(self.filepath).\
-                                                  replace('flt.fits', 'mask.fits'))
-                with fits.open(self.mask_filepath) as m:
-                    self.mask_data = m[0].data
-            else:
-                self.mask_filepath = None
-                self.mask_data = None
+                mask_filename = os.path.basename(self.filepath).\
+                                replace('flt.fits', 'mask.fits')
+                self.mask_filepath = os.path.join(output_dir, mask_filename)
+
+                with fits.open(self.mask_filepath) as mask_file:
+                    self.mask_data = mask_file[0].data
 
 
-    def detect_sources(self, args, data):
+    def detect_sources(self, data):
         """
         Helper function, wrapping the `detect_sources_scan`
         function from the `spatial_scan.phot_tools` module
@@ -1511,7 +1552,7 @@ class obsScan:
 
         Parameters
         ----------
-        self : `obsScan` object
+        self : `ObsScan` object
             Scan.
         args : `argparse.Namespace` or `InteractiveArgs`
             Arguments.
@@ -1524,16 +1565,16 @@ class obsScan:
             Whether a source has been detected.
         """
         self.source_tbl = phot_tools.detect_sources_scan(data,
-                                                         nsigma=3.0,
-                                                         npixels=1000,
+                                                         nsigma=4.0,
+                                                         npixels=250,
                                                          show=False)
 
         try:
             sources_detected = len(self.source_tbl)
             detected = True
         except TypeError:
-            display_message(verbose=args.verbose,
-                            log=args.log,
+            display_message(verbose=self.args.verbose,
+                            log=self.args.log,
                             log_type='error',
                             message='No sources detected.')
             detected = False
@@ -1541,7 +1582,8 @@ class obsScan:
         if detected:
             self.x_pos = self.source_tbl['xcentroid'][0]
             self.y_pos = self.source_tbl['ycentroid'][0]
-            self.theta = -(90 - self.source_tbl['orientation'][0].value) * (np.pi / 180)
+            self.theta = - (np.pi / 180) * \
+                            (90 - self.source_tbl['orientation'][0].value)
 
             if sources_detected == 1:
                 message = f'Detected {sources_detected} source at '\
@@ -1553,15 +1595,13 @@ class obsScan:
                               f'{self.source_tbl["ycentroid"][i]}'
                     if i == 0:
                         message = f'{message} <--- using this one'
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='info',
+            display_message(verbose=self.args.verbose, log=self.args.log,
                             message=message)
 
         return detected
 
 
-    def calculate_phot(self, args, flt_data, fcr_data):
+    def calculate_phot(self):
         """
         Function to calculate the photometry. Performs
         photometry for the FLT data array, FCR data array,
@@ -1578,7 +1618,7 @@ class obsScan:
 
         Parameters
         ----------
-        self : `obsScan` object
+        self : `ObsScan` object
             Scan.
         args : `argparse.Namespace` or `InteractiveArgs`
             Arguments.
@@ -1587,79 +1627,55 @@ class obsScan:
         fcr_data : Boolean
             Whether to calculate photometry for FCR data.
         """
-        self.back_method = args.back_method
+        flt_data = self.args.ap_phot_flt
+        fcr_data = self.args.ap_phot_fcr
 
         if flt_data:
-            self.flt_data = make_PAMcorr_image_UVIS(self.flt_data,
-                                                    self.hdr,
-                                                    self.hdr,
-                                                    PAM_DIR)
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='info',
+            self.flt_data = make_PAMcorr_image_UVIS(self.flt_data, self.hdr,
+                                                    self.hdr, PAM_DIR)
+            display_message(verbose=self.args.verbose, log=self.args.log,
                             message='Applied PAM correction to FLT data')
-            self.flt_data = self.flt_data / self.header_info['exptime']                 # counts/second
+
+            self.flt_data = self.flt_data / self.header_info['exptime']
             self.flt_units = f'{self.flt_units}/s'
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='info',
+            display_message(verbose=self.args.verbose, log=self.args.log,
                             message='Converted FLT data into count-rates')
 
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='info',
+            display_message(verbose=self.args.verbose, log=self.args.log,
                             message='Performing FLT photometry.....')
             self.flt_back, self.flt_back_rms = calc_sky_wrapper(self,
-                                                                data_type='flt',
-                                                                verbose=args.verbose,
-                                                                log=args.log)
+                                                                data_type='flt')
             self.flt_phot, self.flt_phot_rms = calc_phot_wrapper(self,
-                                                                 data_type='flt',
-                                                                 verbose=args.verbose,
-                                                                 log=args.log,
-                                                                 show=args.show_ap_plot)
-
+                                                                 data_type='flt')
 
         if fcr_data:
             try:
-                self.fcr_data = make_PAMcorr_image_UVIS(self.fcr_data,
-                                                        self.hdr,
-                                                        self.hdr,
-                                                        PAM_DIR)
-                display_message(verbose=args.verbose,
-                                log=args.log,
-                                log_type='info',
+                self.fcr_data = make_PAMcorr_image_UVIS(self.fcr_data, self.hdr,
+                                                        self.hdr, PAM_DIR)
+                display_message(verbose=self.args.verbose, log=self.args.log,
                                 message='Applied PAM correction to FCR data')
-                self.fcr_data = self.fcr_data / self.header_info['exptime']              # counts/second
+
+                self.fcr_data = self.fcr_data / self.header_info['exptime']
                 self.fcr_units = f'{self.fcr_units}/s'
-                display_message(verbose=args.verbose,
-                                log=args.log,
-                                log_type='info',
+                display_message(verbose=self.args.verbose, log=self.args.log,
                                 message='Converted FCR data into count-rates')
 
                 self.fcr_back, self.fcr_back_rms = calc_sky_wrapper(self,
-                                                                    data_type='fcr',
-                                                                    verbose=args.verbose,
-                                                                    log=args.log)
+                                                                    data_type='fcr')
                 self.fcr_phot, self.fcr_phot_rms = calc_phot_wrapper(self,
-                                                                     data_type='fcr',
-                                                                     verbose=args.verbose,
-                                                                     log=args.log,
-                                                                     show=args.show_ap_plot)
+                                                                     data_type='fcr')
 
 
             except AttributeError:
-                display_message(verbose=args.verbose,
-                                log=args.log,
-                                log_type='critical',
-                                message="Cannot calculate FCR photometry"\
-                                        "because cosmic ray rejection has not "\
-                                        "been performed yet.\nWhy don't you "\
-                                        "try calling apply_crrej() and maybe "\
-                                        "you'll calm down.")
+                display_message(verbose=self.args.verbose, log=self.args.log,
+                                log_type='critical', message="Cannot "\
+                                "calculate FCR photometry because cosmic ray "\
+                                "rejection has not been performed yet.\nWhy "\
+                                "don't you try calling apply_crrej() and "\
+                                "maybe you'll calm down.")
 
 
-    def make_scan_row(self, flt_data, fcr_data):
+    def make_scan_row(self):
         """
         Helper function to assemble the table row from the
         existing header_info dictionary and various other
@@ -1668,12 +1684,8 @@ class obsScan:
 
         Parameters
         ----------
-        self : `obsScan` object
+        self : `ObsScan` object
             Scan.
-        flt_data : Boolean
-            Whether to look for FLT photometry data.
-        fcr_data : Boolean
-            Whether to look for FCR photometry data.
 
         Returns
         -------
@@ -1682,17 +1694,21 @@ class obsScan:
             name, and the value is the corresponding value
             of the column for this particular scan.
         """
+        flt_data = self.args.ap_phot_flt
+        fcr_data = self.args.ap_phot_fcr
+
         colnames = list(self.header_info.keys())
         row_vals = list(self.header_info.values())
 
-        self_dict = {prop: val for prop, val in vars(self).items()}
+        self_dict = dict(vars(self).items())
 
         phot_info_colnames = ['x_pos', 'y_pos', 'theta']
         phot_info_vals = [self_dict[key] for key in phot_info_colnames]
         colnames.extend(phot_info_colnames)
         row_vals.extend(phot_info_vals)
 
-        ap_colnames = ['ap_dim', 'sky_ap_dim', 'sky_thickness', 'sky_ap_area', 'ap_area']
+        ap_colnames = ['ap_dim', 'sky_ap_dim', 'sky_thick_x', 'sky_thick_y',
+                       'sky_ap_area', 'ap_area']
         ap_vals = [str(self.ap_info[key]) for key in ap_colnames]
         colnames.extend(ap_colnames)
         row_vals.extend(ap_vals)
@@ -1711,7 +1727,7 @@ class obsScan:
             colnames.extend(fcr_colnames)
             row_vals.extend(fcr_vals)
 
-        row_dict = {col: val for col, val in zip(colnames, row_vals)}
+        row_dict = dict(zip(colnames, row_vals))
 
         return row_dict
 
@@ -1744,14 +1760,15 @@ def uvis_scan_pipeline(args, dirs):
 
 
 if __name__ == '__main__':
-    args = parse_args()
-    dirs = initialize_directories(args)
+    my_args = parse_args()
 
-    if args.log:
+    my_dirs = initialize_directories(my_args)
+
+    if my_args.log:
         setup_logging(log_dir=os.path.join(MONITOR_DIR, 'logs'),
-                      log_name=args.name)
+                      log_name=my_args.name)
 
-    if args.verbose:
-        display_args(args)
+    if my_args.verbose:
+        display_args(my_args)
 
-    uvis_scan_pipeline(args, dirs)
+    uvis_scan_pipeline(my_args, my_dirs)
