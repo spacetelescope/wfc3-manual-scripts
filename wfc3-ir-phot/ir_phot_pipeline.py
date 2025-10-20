@@ -66,8 +66,9 @@ from ir_plotting import plot_flt_sources
 from ir_syn import make_syn_targets
 from ir_toolbox import display_args, make_phot_cols, parse_args, PAM
 
-import warnings
+
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+
 
 class ObsBatch():
     """WFC3/IR standard star staring mode observations.
@@ -633,10 +634,8 @@ class ObsBatch():
                 self.hdr = get_hdr_info(self.exposure_file, self.args.verbose,
                                         self.args.log)
 
-                messages = ['.', f'{self.hdr["rootname"]}:']
-                for message in messages:
-                    display_message(verbose=self.args.verbose, log=self.args.log,
-                                    log_type='info', message=message)
+                display_message(verbose=self.args.verbose, log=self.args.log,
+                                log_type='info', message=f'{self.hdr["rootname"]}:')
 
                 # Don't use GS fails, warn for any satellite trails.
                 use_obs_for_phot, satellite_trail = self.check_for_anomalies()
