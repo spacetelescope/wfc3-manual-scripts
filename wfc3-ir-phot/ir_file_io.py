@@ -310,7 +310,7 @@ def filter_file_type(obs_table, helium_corr, verbose, log):
                                 f'to enable helium correction in {filt}')
 
     else:
-        file_types = ['FLT']
+        file_types = ['FLT', 'IMA']
 
     # Get all products in the proposal/target/filter table.
     all_products = Observations.get_product_list(obs_table)
