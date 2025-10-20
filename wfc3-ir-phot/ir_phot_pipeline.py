@@ -885,8 +885,8 @@ def run_process(args, dirs, write, overwrite):
 
                 if phot_table is not None:
                     phot_table.write(tbl_path, overwrite=overwrite, format='csv')
-                    messages = ['Wrote table to:', f'    {tbl_path}', dashes]
-                    for messages in message:
+                    messages = ['Wrote table to:', f'    {tbl_path}']
+                    for message in messages:
                         display_message(verbose=args.verbose, log=args.log,
                                         log_type='info', message=message)
 
