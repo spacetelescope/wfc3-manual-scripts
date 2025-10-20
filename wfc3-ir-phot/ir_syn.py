@@ -264,12 +264,13 @@ def make_synthetic_spectrum(targname, verbose, log):
     return spectrum
 
 
-def make_syn_targets(filepaths_batches, verbose, log):
+def make_syn_targets(filepaths_batches, radius, verbose, log):
     """Makes dictionary of synthetic targets & photometry
 
     Parameters
     ----------
     filepaths_batches : list
+    radius : int
 
     Returns
     -------
@@ -295,7 +296,8 @@ def make_syn_targets(filepaths_batches, verbose, log):
         syn_target = SynTarget(target, verbose=verbose, log=log)
 
         if syn_target.spectrum is not None:
-            syn_target.get_phot_table(filters, aper_arcsec='.4',
+            aper_arcsec = str(0.13 * radius)
+            syn_target.get_phot_table(filters, aper_arcsec=aper_arcsec,#aper_arcsec='.4',
                                       verbose=verbose, log=log)
             syn_targets[target] = syn_target  # add to dictionary
             del syn_target                    # then delete
