@@ -1,17 +1,17 @@
 """
 Authors: Mariarosa Marinelli, Anne O'Connor
 """
-import matplotlib.pyplot as plt
-from astropy.table import Table, vstack
-from astropy.time import Time
-import numpy as np
-from glob import glob
+import os
 import pandas as pd
-from scipy.stats import linregress
+import numpy as np
+import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import datetime as dt
-import os
 import plotly.express as px
+from astropy.table import Table, vstack
+from astropy.time import Time
+from glob import glob
+from scipy.stats import linregress
 
 def plot_normcr(data, filt, uvis='both', save=False, save_dir=None):
     if uvis == 'both':
@@ -131,7 +131,8 @@ def plot_scan_phot_over_time_plotly(args, dirs):
     args : `argparse.Namespace` or `InteractiveArgs`
         Arguments.
     dirs : dict
-        Dictionary of directories.'''
+        Dictionary of directories.
+    '''
 
 
     filters=args.filters
