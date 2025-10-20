@@ -1,4 +1,4 @@
-# wfc3-ir-phot
+# cal_ir_monitor_calspec
 The WFC3/IR staring mode monitoring pipeline for standard stars.
 
 ## Description
@@ -15,7 +15,7 @@ The pipeline requires the packages [`pyql`](https://github.com/spacetelescope/py
 
 This pipeline is primarily designed to run from the command line, with a total of 21 possible configurable arguments: 4 pipeline settings, 5 pipeline execution flags, and 12 pipeline parameters.
 
-    > python ir_phot_pipeline.py [-n NAME] [--trial]
+    > python cal_ir_monitor_calspec.py [-n NAME] [--trial]
           [--verbose] [--log] [--get_new_data] [--redownload]
           [--drizzle] [--storm] [--run_ap_phot]
           [--proposals PROPOSALS [PROPOSALS ...]]
@@ -29,7 +29,7 @@ This pipeline is primarily designed to run from the command line, with a total o
 
 The 21 arguments are explained in greater detail in `ir_phot_toolbox.py`, and can also be viewed by using the `--help` flag.
 
-    > python ir_phot_pipeline.py --help
+    > python cal_ir_monitor_calspec.py --help
 
 
 ## Code details
@@ -49,7 +49,7 @@ Enables helium correction in the F105W and F110W filters for the IR staring mode
 ### `ir_logging.py`
 Logging functions and classes for the IR staring mode standard star photometry monitor pipeline.
 
-### **`ir_phot_pipeline.py`**
+### **`cal_ir_monitor_calspec.py`**
 
 As the name suggests, this is the primary script for this pipeline. It can be run either from the command line or from a notebook environment.
 
