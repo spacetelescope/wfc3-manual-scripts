@@ -5,7 +5,7 @@ Pipeline for IR staring mode standard star photometry monitor.
 Usage
 -----
 
-python ir_phot_pipeline.py --trial --verbose --log --get_new_data --run_ap_phot --ap_phot_flt --helium_corr
+python cal_ir_monitor_calspec.py --trial --verbose --log --get_new_data --run_ap_phot --ap_phot_flt --helium_corr
 
     This monitor is primarily designed to run from the
     command line, with a total of 22 possible configurable
@@ -28,13 +28,13 @@ python ir_phot_pipeline.py --trial --verbose --log --get_new_data --run_ap_phot 
     All arguments have defaults set, so the monitor can be
     run without any arguments at all:
 
-        > python ir_phot_pipeline.py
+        > python cal_ir_monitor_calspec.py
 
     The 22 arguments are explained in greater detail in
     `ir_phot_toolbox.py`, and can also be viewed by using
     the `--help` flag.
 
-        > python ir_phot_pipeline.py --help
+        > python cal_ir_monitor_calspec.py --help
 
 Author
 ------
@@ -903,7 +903,7 @@ def run_process(args, dirs, write, overwrite):
                             log_type='info', message=message)
 
 
-def run_pipeline(args, dirs):
+def cal_ir_monitor_calspec(args, dirs):
     """Run the whole shebang.
 
     Runs the IR photometry pipeline using the parsed
@@ -937,4 +937,4 @@ if __name__ == '__main__':
     run_dirs = initialize_directories(parsed_args)
 
     # Showtime.
-    run_pipeline(parsed_args, run_dirs)
+    cal_ir_monitor_calspec(parsed_args, run_dirs)
