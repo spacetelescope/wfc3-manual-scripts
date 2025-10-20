@@ -4,6 +4,9 @@ This repository serves as a home for selected WFC3 monitoring/calibration script
 
 ## Contents 
 
+### `cal_ir_monitor_calspec`
+Pipeline and associated analysis tools for the WFC3/IR staring mode CALSPEC photometry pipeline. See [WFC3 ISR 2024-06](https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2024/WFC3-ISR-2024-06.pdf) (Marinelli et al.) for more details.
+
 ### `cal_ir_make_darks`
 Pipeline for the refactored WFC3/IR superdarks pipeline, most recently used to create superdark calibration files for HST Cycles 26-30. See [WFC3 ISR 2024-16](https://www.stsci.edu/files/live/sites/www/files/home/hst/instrumentation/wfc3/documentation/instrument-science-reports-isrs/_documents/2024/WFC3-ISR-2024-16.pdf) (Pidgeon & Khandrika) for more details.
 
