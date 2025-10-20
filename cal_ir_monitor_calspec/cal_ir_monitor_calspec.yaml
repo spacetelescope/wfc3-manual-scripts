@@ -1,0 +1,29 @@
+name: cal_ir_monitor_calspec
+channels:
+  - astropy
+  - conda-forge
+  - defaults
+dependencies:
+  - astropy=5.0.4
+  - astroquery=0.4.6
+  - ginga
+  - hstcal=3.1.0
+  - jupyter=1.0.0
+  - matplotlib
+  - notebook
+  - numpy
+  - pandas
+  - photutils=1.5.0
+  - pip
+  - pylint
+  - python
+  - pytz
+  - scikit-learn
+  - scipy
+  - sqlalchemy
+  - stsynphot
+  - synphot
+  - yaml
+  - pip:
+    - crds
+    - wfc3tools
