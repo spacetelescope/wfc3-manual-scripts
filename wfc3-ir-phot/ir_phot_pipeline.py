@@ -2,12 +2,6 @@
 """
 Pipeline for IR staring mode standard star photometry monitor.
 
-Notes
------
-- Right now, just works for FLTs
-- No analysis set up here, all in notebooks
-- Set up function to physically (re)move bad data (GS fail, no source)
-
 Usage
 -----
 
@@ -44,7 +38,7 @@ python ir_phot_pipeline.py --trial --verbose --log --get_new_data --run_ap_phot 
 
 Author
 ------
-    Mariarosa Marinelli, 2023
+    Mariarosa Marinelli, 2023-2025
 """
 
 import os
@@ -58,7 +52,7 @@ from photutils.aperture import CircularAnnulus, CircularAperture, aperture_photo
 from photutils.detection import DAOStarFinder
 from photutils.segmentation import detect_sources, detect_threshold, SourceCatalog
 
-from pyql.database.ql_database_interface import session, Master, Anomalies
+from pyql.database.ql_database_interface import session, Main, Anomalies
 from wfc3_phot_tools.staring_mode.background import make_aperture_stats_tbl
 from wfc3_phot_tools.staring_mode.aperture_phot import iraf_style_photometry
 from wfc3_phot_tools.staring_mode.rad_prof import RadialProfile
@@ -66,7 +60,7 @@ from wfc3_phot_tools.staring_mode.rad_prof import RadialProfile
 from ir_download import get_new_data_wrapper
 from ir_file_io import initialize_directories, locate_data, move_bad_files, set_tbl_path
 from ir_fits import get_ext_data, get_hdr_info
-from only_helium import only_helium
+#from only_helium import only_helium
 from ir_logging import command_line_logging, display_message
 from ir_plotting import plot_flt_sources
 from ir_syn import make_syn_targets
@@ -535,11 +529,11 @@ class ObsBatch():
         self.ql_root = self.hdr['rootname'][:-1]
         self.ql_flags = {}
 
-        results = session.query(Master.ql_root, Anomalies.ql_root,
+        results = session.query(Main.ql_root, Anomalies.ql_root,
                                 Anomalies.satellite_trail,
                                 Anomalies.guidestar_failure).\
-                          join(Master, Master.ql_root == Anomalies.ql_root).\
-                          filter(Master.ql_root == self.ql_root).\
+                          join(Main, Main.ql_root == Anomalies.ql_root).\
+                          filter(Main.ql_root == self.ql_root).\
                           all()
 
         # If no results are returned, then the observation has not been added
@@ -851,7 +845,7 @@ def run_process(args, dirs, write, overwrite):
 
         if args.run_ap_phot:
             # Set up synthetic targets first, to use for each batch.
-            syn_targets = make_syn_targets(filepaths_batches,
+            syn_targets = make_syn_targets(filepaths_batches, args.radius,
                                            verbose=args.verbose, log=args.log)
 
             # Iterate through batches.
@@ -918,8 +912,8 @@ def run_pipeline(args, dirs):
 
     Parameters
     ----------
-    args :
-    dirs :
+    args : 
+    dirs : 
     """
     if args.get_new_data:
         get_new_data_wrapper(args, dirs)
