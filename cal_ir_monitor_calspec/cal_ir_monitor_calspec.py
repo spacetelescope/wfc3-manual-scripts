@@ -608,10 +608,10 @@ class ObsBatch():
         -------
         phot_tbl : `astropy.table.Table`
         """
-        # Begin creating the columns and rows of our photometry table.
+        # Begin creating the rows of our photometry table.
         phot_rows = []
-
         bad_files = []
+        
         # Refactor to use subclass?
         # Iterate over filepaths in observation batch.
         # Reassign values each time - we won't need them again.
@@ -755,7 +755,8 @@ class ObsBatch():
                     file_row.extend([value for key, value in self.hdr.items()])
 
                     # If nothing has been added to row list,
-                    # i.e. earlier filepaths didn't have detections:
+                    # i.e. earlier filepaths didn't have detections,
+                    # or this is the first iteration altogether. 
                     if len(phot_rows) == 0:
                         phot_cols = make_phot_cols(self.hdr, self.dq_buffer)
 
@@ -801,7 +802,6 @@ class ObsBatch():
 
 
         move_bad_files(bad_files, verbose=self.args.verbose, log=self.args.log)
-
 
         if len(phot_rows) == 0:
             phot_tbl = None
