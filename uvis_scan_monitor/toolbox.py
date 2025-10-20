@@ -7,7 +7,7 @@ import os
 import sys
 
 MONITOR_DIR = '/grp/hst/wfc3v/wfc3photom/data/uvis_scan_monitor'
-SCAN_PROGRAMS = [14878, 15398, 15583, 16021, 16416, 16580, 17016, 17362]
+SCAN_PROGRAMS = [14878, 15398, 15583, 16021, 16416, 16580, 17016, 17362, 17962]
 CORE_FILTERS = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
 CORE_TARGETS = ['GD153', 'GRW70', 'P330E']
 
@@ -485,6 +485,9 @@ def parse_args():
                         action='store_true')
     parser.add_argument("--ap_phot_flt",
                         help='when set, perform aperture photometry on FLTs',
+                        action='store_true')
+    parser.add_argument("--write_to_QL",
+                        help='When set, creates and writes plots of scan photometry results over time to Quicklook manual outputs',
                         action='store_true')
 
     args = parser.parse_args()
