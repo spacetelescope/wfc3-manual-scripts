@@ -9,7 +9,7 @@ This pipeline was used to reduce and analyze standard star staring data observed
 
 ## Requirements
 
-The pipeline requires the packages [`pyql`](https://github.com/spacetelescope/pyql), maintained by the HST/WFC3 Quicklook team, and [`wfc3-phot-tools`](https://github.com/spacetelescope/wfc3-phot-tools/), maintained by Mariarosa Marinelli. Please see the `irphot_env.yml` file for all dependencies.
+The pipeline requires the packages [`pyql`](https://github.com/spacetelescope/pyql), maintained by the HST/WFC3 Quicklook team, and [`wfc3-phot-tools`](https://github.com/spacetelescope/wfc3-phot-tools/), maintained by Mariarosa Marinelli. Please see the `cal_ir_monitor_calspec.yaml` file for all dependencies.
 
 ## Usage
 
