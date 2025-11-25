@@ -11,6 +11,19 @@ This pipeline was used to reduce and analyze standard star staring data observed
 
 The pipeline requires the packages [`pyql`](https://github.com/spacetelescope/pyql), maintained by the HST/WFC3 Quicklook team, and [`wfc3-phot-tools`](https://github.com/spacetelescope/wfc3-phot-tools/), maintained by Mariarosa Marinelli. Please see the `cal_ir_monitor_calspec.yaml` file for all dependencies.
 
+## Set Up
+
+First, set up the environment and activate it.
+
+```
+conda env create -f cal_ir_monitor_calspec.yaml
+
+conda activate cal_ir_monitor_calspec
+```
+
+Next, follow the repository instructions for installing the [`pyql`](https://github.com/spacetelescope/pyql) and [`wfc3-phot-tools`](https://github.com/spacetelescope/wfc3-phot-tools/) packages. 
+
+
 ## Usage
 
 This pipeline is primarily designed to run from the command line, with a total of 21 possible configurable arguments: 3 pipeline settings, 6 pipeline execution flags, and 9 pipeline parameters.
