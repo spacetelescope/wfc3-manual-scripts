@@ -13,21 +13,22 @@ The pipeline requires the packages [`pyql`](https://github.com/spacetelescope/py
 
 ## Usage
 
-This pipeline is primarily designed to run from the command line, with a total of 21 possible configurable arguments: 4 pipeline settings, 5 pipeline execution flags, and 12 pipeline parameters.
+This pipeline is primarily designed to run from the command line, with a total of 21 possible configurable arguments: 3 pipeline settings, 6 pipeline execution flags, and 9 pipeline parameters.
 
-    > python cal_ir_monitor_calspec.py [-n NAME] [--trial]
-          [--verbose] [--log] [--get_new_data] [--redownload]
-          [--drizzle] [--storm] [--run_ap_phot]
+    > python cal_ir_monitor_calspec.py 
+          [-n NAME] [--trial] [--local]
+          [--get_new_data] [--redownload] 
+          [--helium] [--linearity] 
+          [--run_ap_phot] [--plot_sources]
+          [--nlinfile NLINFILE] 
           [--proposals PROPOSALS [PROPOSALS ...]]
           [--targets TARGETS [TARGETS ...]]
           [--filters FILTERS [FILTERS ...]]
-          [--file_type {flt,drz}] [--radius RADIUS]
-          [--annulus ANNULUS] [--dannulus DANNULUS]
-          [--back_method {mean,median,mode}]
-          [--ap_phot_drz] [--ap_phot_flt]
-          [-w WRITE_DIR] [--plot_sources]
+          [--radius RADIUS] [--annulus ANNULUS] 
+          [--dannulus DANNULUS] [--back_method {mean,median,mode}]
+          [-w WRITE_DIR] 
 
-The 21 arguments are explained in greater detail in `ir_phot_toolbox.py`, and can also be viewed by using the `--help` flag.
+The 18 arguments are explained in greater detail in `ir_phot_toolbox.py`, and can also be viewed by using the `--help` flag.
 
     > python cal_ir_monitor_calspec.py --help
 
@@ -46,9 +47,6 @@ Functions for handling FITS files, including easily accessing header information
 ### `ir_helium_corr.py`
 Enables helium correction in the F105W and F110W filters for the IR staring mode standard star pipeline.
 
-### `ir_logging.py`
-Logging functions and classes for the IR staring mode standard star photometry monitor pipeline.
-
 ### **`cal_ir_monitor_calspec.py`**
 
 As the name suggests, this is the primary script for this pipeline. It can be run either from the command line or from a notebook environment.
@@ -59,7 +57,7 @@ The main function is `run_pipeline()`, which takes parameters of `args` and `dir
   - set in a notebook via an `InteractiveArgs` class object from `ir_toolbox.py`
 - `dirs` is a dictionary of four full directory paths ('data', 'bad', 'output', 'plots'), and is set by the `initialize_directories()` function in `ir_toolbox.py`.
 
-Currently, the pipeline is not equipped to drizzle observations or perform photometry on drizzled files, which is why the functions `drizzle_wrapper()` and `redrizzle_wrapper()` are empty, and why the process_name for `run_process()` is manually set to 'photometry' only.
+Currently, the pipeline is not equipped to drizzle observations or perform photometry on drizzled files.
 
 ### `ir_plotting.py`
 Functions to create plots for the IR standard star staring mode photometry monitor.
