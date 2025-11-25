@@ -3,6 +3,9 @@
 Functions to manage file I/O, including checking and creating directories,
 filtering and moving files, and setting paths.
 
+This is also where we call `batch_reprocess()` from the reprocessing module,
+so when we are locating data, we are only using the FLTs.
+
 Author
 ------
     Mariarosa Marinelli, 2023
@@ -44,10 +47,11 @@ import os
 import shutil
 from glob import glob
 
-from astropy.table import Table, vstack
+from astropy.table import Table
 from astroquery.mast import Observations
 
-from ir_logging import display_message, MONITOR_DIR, make_timestamp
+from ir_reprocess import batch_reprocess
+from ir_toolbox import MONITOR_DIR, make_timestamp
 
 
 def rename_file(to_rename, file_type, append_string):
@@ -68,7 +72,7 @@ def rename_file(to_rename, file_type, append_string):
         os.rename(file, new_name)
 
 
-def archive_calibrated_files(group, current_dirname, verbose, log):
+def archive_calibrated_files(group, current_dirname):
     """
     Parameter
     ---------
@@ -82,22 +86,12 @@ def archive_calibrated_files(group, current_dirname, verbose, log):
                    if not f.endswith('raw.fits')]
 
     if len(calib_files) == 0:
-        display_message(log=log, verbose=verbose, log_type='info',
-                        message=f'No existing calibrated files in {current_dirname}')
+        print(f'No existing calibrated files in {current_dirname}')
     else:
-        display_message(log=log, verbose=verbose, log_type='info',
-                        message=f'Archiving {len(calib_files)} calibrated files'\
-                                f' in {current_dirname}')
+        print(f'Archiving {len(calib_files)} calibrated files in '\
+                     f'{current_dirname}')
 
         archive_timestamp = make_timestamp()
-        #archive_filename = os.path.join(current_dirname,
-        #                               f'archive_{archive_timestamp}')
-
-        #if not os.path.exists(archive_dirname):
-        #    os.mkdir(archive_dirname)
-        #    display_message(log=log, verbose=verbose, log_type='info',
-        #                    message='Created archive directory at '\
-        #                            f'{archive_dirname}')
 
         for current_path in calib_files:
             current_name = os.path.basename(current_path)
@@ -105,28 +99,28 @@ def archive_calibrated_files(group, current_dirname, verbose, log):
             new_path = os.path.join(os.path.dirname(current_path), new_name)
 
             shutil.move(current_path, new_path)
-            display_message(verbose=verbose, log=log, log_type='info',
-                            message=f'Calibrated file moved to {new_path}')
+            print(f'Calibrated file moved to {new_path}')
 
 
-def check_for_raw(filepath, verbose, log):
+def check_for_raw(filepath):
     """
+    not in use?
+
     Checks to see if the RAW file corresponding to the path
-    to the FLT or DRZ file (`filepath`) exists already in
-    the same location as the input file. Will return the
-    anticipated RAW filepath and a Boolean indicating
-    whether or not the RAW file exists.
+    to the FLT file (`filepath`) exists already in the same
+    location as the input file. Will return the anticipated
+    RAW filepath and a Boolean indicating whether or not
+    the RAW file exists.
 
     Parameter
     ---------
     filepath : str
-        String representation of a file path to an FLT or
-        DRZ file.
+        String representation of the path to an FLT file.
 
     Returns
     -------
     raw_filepath : str
-        String representation of a file path to a RAW file,
+        String representation of the path to a RAW file,
         regardless of if it actually exists.
     raw_exists : Boolean
         Whether the corresponding RAW exists in the same
@@ -136,21 +130,15 @@ def check_for_raw(filepath, verbose, log):
     raw_exists = os.path.exists(raw_filepath)
 
     if raw_exists:
-        display_message(log=log,
-                        verbose=verbose,
-                        log_type='info',
-                        message=f'Found RAW file at {raw_filepath}')
+        print(f'Found RAW file at {raw_filepath}')
 
     else:
-        display_message(log=log,
-                        verbose=verbose,
-                        log_type='info',
-                        message=f'No RAW file found with {filepath}')
+        print(f'No RAW file found with {filepath}')
 
     return raw_filepath, raw_exists
 
 
-def check_subdirectory(parent_dir, sub_name, verbose=True, log=False):
+def check_subdirectory(parent_dir, sub_name):
     """Creates subdirectory if it doesn't already exist.
 
     Helper function to check if a subdirectory exists.
@@ -164,10 +152,6 @@ def check_subdirectory(parent_dir, sub_name, verbose=True, log=False):
         absolute path).
     sub_name : str
         Name of subdirectory.
-    verbose : Boolean
-        Whether to print the message; defaults to True.
-    log : Boolean
-        Whether to log the message; defaults to False.
 
     Returns
     -------
@@ -178,110 +162,21 @@ def check_subdirectory(parent_dir, sub_name, verbose=True, log=False):
     sub_dir = os.path.join(parent_dir, sub_name)
     if os.path.exists(parent_dir):
         if os.path.exists(sub_dir):
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='info',
-                            message=f'  Found existing directory at {sub_dir}')
+            print(f'  Found existing directory at {sub_dir}')
         else:
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='info',
-                            message=f'  Making new directory at {sub_dir}')
+            print(f'  Making new directory at {sub_dir}')
             os.mkdir(sub_dir)
 
     else:
-        critical_messages = [f'  Nonexistent parent directory: {parent_dir}',
-                             f'  Cannot make new directory at {sub_dir}']
-        for critical_message in critical_messages:
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='critical',
-                            message=critical_message)
+        print(f'  Nonexistent parent directory: {parent_dir}\n'\
+              f'  Cannot make new directory at {sub_dir}')
 
         sub_dir = None
 
     return sub_dir
 
 
-
-def download_raws(filepaths, verbose, log):
-    """
-    Checks for the corresponding RAW files for an input
-    list of paths to files (FLTs or DRZs). If a RAW doesn't
-    already exist in the same location as the FLT/DRZ file,
-    the file is downloaded from MAST and moved to the
-    appropriate location.
-
-    Parameters
-    ----------
-    filepaths : list of str
-        List of paths to FLT/DRZ files.
-    verbose :
-    log :
-
-    Returns
-    -------
-    existing_raw_filepaths : list
-    """
-    needed_raw_prods = Table()
-    intended_dir = os.path.dirname(filepaths[0])
-    raw_filepaths = []
-
-    for filepath in filepaths:
-        raw_filepath, raw_exists = check_for_raw(filepath, verbose, log)
-        raw_filepaths.append(raw_filepath)
-
-        if not raw_exists:
-            display_message(verbose=verbose, log=log, log_type='info',
-                            message=f'File {raw_filepath} does not exist '\
-                                    'and will be downloaded')
-
-            rootname = raw_filepath.split('/')[-1].split('_')[0]
-            raw_prod = get_raw_product(rootname)
-
-            needed_raw_prods = vstack([needed_raw_prods, raw_prod])
-
-    if len(needed_raw_prods) == 0:
-        display_message(verbose=verbose, log=log, log_type='info',
-                        message=f'All expected RAW files exist.')
-    else:
-        display_message(verbose=verbose, log=log, log_type='info',
-                        message=f'Downloading {len(needed_raw_prods)} files...')
-        manifest = Observations.download_products(needed_raw_prods)
-
-        manifest, _ = move_downloaded_files(manifest,
-                                            intended_dir,
-                                            verbose=verbose,
-                                            log=log)
-
-    display_message(verbose=verbose, log=log, log_type='info',
-                    message='Verifying that downloaded RAWs are in '\
-                            'the correct location...')
-    raw_missing = [not os.path.exists(r) for r in raw_filepaths]
-
-    if any(raw_missing):
-        messages = ["Was not able to download RAW file to correct location:"]
-
-        missing_files = [raw_filepath for i, raw_filepath
-                         in enumerate(raw_filepaths)
-                         if raw_missing[i] is True]
-        existing_raw_filepaths = [raw_filepath for raw_filepath in raw_filepaths
-                                  if raw_filepath not in missing_files]
-
-        for missing_file in missing_files:
-            messages.append(f'\t{missing_file}')
-
-        for message in messages:
-            display_message(verbose=verbose, log=log, message=message,
-                            log_type='warning')
-
-    else:
-        existing_raw_filepaths = raw_filepaths
-
-    return existing_raw_filepaths
-
-
-def filter_file_type(obs_table, helium_corr, verbose, log):
+def filter_file_type(obs_table, reproc_hel, reproc_lin):
     """Filters file type for a batch of products.
 
     Parameters
@@ -291,8 +186,6 @@ def filter_file_type(obs_table, helium_corr, verbose, log):
         and filtered to each proposal, target, and filter.
     helium_corr : Boolean
         Whether to apply helium correction.
-    verbose :
-    log :
 
     Returns
     -------
@@ -301,39 +194,28 @@ def filter_file_type(obs_table, helium_corr, verbose, log):
     """
     filt = obs_table['filters'][0]
 
-    if (filt in ['F105W', 'F110W']) and helium_corr:
-        #file_types = ['FLT', 'RAW']
-        # For now, just download the RAWs so there's no ambiguity
-        file_types = ['IMA', 'ASN', 'FLT', 'RAW']
-        display_message(verbose=verbose, log=log, log_type='info',
-                        message='Will download ASN, FLT, IMA, and RAW files '\
-                                f'to enable helium correction in {filt}')
+    if reproc_lin or (reproc_hel and (filt in ['F105W', 'F110W'])):
+        file_types = ['ASN', 'RAW', 'SPT']
+        print('Will download ASN, RAW, and SPT files for reprocessing.')
 
     else:
         file_types = ['FLT', 'IMA']
+        print('Will download FLT and IMA files.')
 
     # Get all products in the proposal/target/filter table.
-    all_products = Observations.get_product_list(obs_table)
+    all_prods = Observations.get_product_list(obs_table)
 
-    filtered_products = Observations.filter_products(all_products,
-                                                     project='CALWF3',
-                                                     productSubGroupDescription=file_types)
+    prods = Observations.filter_products(all_prods, project='CALWF3',
+                                         productSubGroupDescription=file_types)
 
-    messages = ['Product table filtered to']
+
+    print('Product table filtered to')
 
     for file_type in file_types:
-        prod_count = len(filtered_products[\
-                         filtered_products[\
-                         "productSubGroupDescription"] == file_type])
-        messages.append(f'\t{prod_count} {file_type} files')
+        len_prod = len(prods[prods["productSubGroupDescription"] == file_type])
+        print(f'\t{len_prod} {file_type} files')
 
-    for message in messages:
-        display_message(verbose=verbose,
-                        log=log,
-                        log_type='info',
-                        message=message)
-
-    return filtered_products
+    return prods
 
 
 def get_raw_product(rootname):
@@ -390,13 +272,7 @@ def initialize_directories(args):
     dirs : dict
         Dictionary of directories.
     """
-    function_desc = 'Initializing needed directories...'
-    dashes = '-'*len(function_desc)
-    for message in [dashes, function_desc]:
-        display_message(verbose=args.verbose,
-                        log=args.log,
-                        log_type='info',
-                        message=message)
+    print(f'{"-"*34}\nInitializing needed directories...')
 
     if args.trial:
         trial_dir_name = args.name
@@ -406,10 +282,7 @@ def initialize_directories(args):
         else:
             trial_parent_dir = MONITOR_DIR
 
-        trial_dir = check_subdirectory(parent_dir=trial_parent_dir,
-                                       sub_name=trial_dir_name,
-                                       verbose=args.verbose,
-                                       log=args.log)
+        trial_dir = check_subdirectory(trial_parent_dir, trial_dir_name)
 
     else:
         trial_dir = MONITOR_DIR
@@ -418,13 +291,64 @@ def initialize_directories(args):
     dirs = {}
 
     for dir_name in dir_names:
-        actual_dir = check_subdirectory(parent_dir=trial_dir,
-                                        sub_name=dir_name,
-                                        verbose=args.verbose,
-                                        log=args.log)
+        actual_dir = check_subdirectory(trial_dir, dir_name)
         dirs[f'{dir_name}_dir'] = actual_dir
 
     return dirs
+
+
+def find_flts(file_dir, lin_bool, he_bool, nlinfile):
+    """
+    find files
+    """
+    filt = file_dir.split('/')[-1]
+    flt_files = sorted(glob(os.path.join(file_dir, '*flt.fits')))
+
+    if lin_bool or (he_bool and filt in ['F105W', 'F110W']):
+        # Make sure to remove any FLT files that already exist
+        # otherwise calwf3 will crash.
+        if len(flt_files) > 0:
+            for flt_file in flt_files:
+                os.remove(flt_file)
+            print(f'Removed {len(flt_files)} existing FLT files')
+
+        flt_files = batch_reprocess(file_dir, lin_bool, he_bool, nlinfile)
+
+    return flt_files
+
+
+def get_dirs_and_attrs(parent_dir, attr_arg, make_int=False):
+    """
+    get directories and check against attributes
+    """
+    cat_dirs = sorted(glob(os.path.join(parent_dir, '*')))
+    category = [os.path.basename(cat_dir) for cat_dir in cat_dirs]
+    if make_int:
+        category = [int(c) for c in category]
+
+    use_dirs = [cat_dirs[i] for i, cat in enumerate(category) if cat in attr_arg]
+
+    return use_dirs
+
+
+def map_subdirectories(parent_dir, args):
+    """
+    map subdirectories
+    """
+    mapped_dirs = []
+
+    p_dirs = get_dirs_and_attrs(parent_dir, attr_arg=args.proposals,
+                                make_int=True)
+
+    for p_dir in p_dirs:
+        t_dirs = get_dirs_and_attrs(p_dir, attr_arg=args.targets)
+
+        for t_dir in t_dirs:
+            f_dirs = get_dirs_and_attrs(t_dir, attr_arg=args.filters)
+
+            mapped_dirs.extend(f_dirs)
+
+    return mapped_dirs
 
 
 def locate_data(args, data_dir):
@@ -447,102 +371,30 @@ def locate_data(args, data_dir):
         to the directories in which data exists, and values
         are the lists of files in those subdirectories.
     """
-    status = 'Locating data to process...'
-    dashes = '-'*len(status)
-    for message in [dashes, status]:
-        display_message(verbose=args.verbose,
-                        log=args.log,
-                        log_type='info',
-                        message=message)
+    print(f'{"-"*27}\nLocating data to process...')
 
-    skipping = "Skipping _ because + = was not specified."
-    filepaths_batches = {}
+    batches = {}
 
-    proposals_dirs = sorted(glob(os.path.join(data_dir, '*')))
-    proposals = [int(os.path.basename(proposal_dir))
-                 for proposal_dir in proposals_dirs]
+    ptf_dirs = map_subdirectories(data_dir, args)
 
-    for proposal, proposal_dir in zip(proposals, proposals_dirs):
-        if proposal in args.proposals:
-            targets_dirs = sorted(glob(os.path.join(proposal_dir, '*')))
-            targets = [os.path.basename(target_dir)
-                       for target_dir in targets_dirs]
+    for ptf_dir in ptf_dirs:
+        ptf = ptf_dir.split('/')[-3:]
+        files = find_flts(ptf_dir, args.linearity, args.helium, args.nlinfile)
 
-            for target, target_dir in zip(targets, targets_dirs):
-                if (target in args.targets) or (args.targets == 'all'):
-                    filters_dirs = sorted(glob(os.path.join(target_dir, '*')))
-                    filters = [os.path.basename(filter_dir)
-                               for filter_dir in filters_dirs]
+        if len(files) > 0:
+            key = f'{ptf[0]}/{ptf[1]}/{ptf[2]}'
+            print(f' {key}: {len(files)} files found')
 
-                    for filt, filter_dir in zip(filters, filters_dirs):
-                        if (filt in args.filters) or (args.filters == 'all'):
+            batches[key] = files
 
-                            if args.helium_corr and filt in ['F105W', 'F110W']:
-                                search_for = os.path.join(filter_dir,
-                                                          f'*raw.fits')
-                            else:
-                                search_for = os.path.join(filter_dir,
-                                                          f'*{args.file_type}.fits')
-
-                            # Avoid picking up any of the original MAST or
-                            # no-ramp-fitting files.
-                            filepaths = [path for path in sorted(glob(search_for))
-                                         if path.split('/')[-1].split('.')[0][9:]
-                                         not in ['_mast_flt', '_nrf_flt']]
-
-
-                            if len(filepaths) > 0:
-                                batch_key = f'{proposal}/{target}/{filt}'
-                                filepaths_batches[batch_key] = filepaths
-
-                                messages = [f'{len(filepaths)} files found '\
-                                            f'for {batch_key}:']
-
-                                messages.extend([f'{" "*4}- {f.split("/")[-1]}'
-                                                 for f in filepaths])
-
-                                for message in messages:
-                                    display_message(verbose=args.verbose,
-                                                    log=args.log,
-                                                    log_type='info',
-                                                    message=message)
-
-                            else:
-                                message = 'Did not find any matching files in '\
-                                          f'{filter_dir}'
-                                display_message(verbose=args.verbose,
-                                                log=args.log,
-                                                log_type='warning',
-                                                message=message)
-                        else:
-                            skip_message = skipping.replace('_', filter_dir).\
-                                                    replace('+', 'filter').\
-                                                    replace('=', filt)
-                            display_message(verbose=args.verbose,
-                                            log=args.log,
-                                            log_type='info',
-                                            message=skip_message)
-                else:
-                    skip_message = skipping.replace('_', target_dir).\
-                                            replace('+', 'target').\
-                                            replace('=', target)
-                    display_message(verbose=args.verbose,
-                                    log=args.log,
-                                    log_type='info',
-                                    message=skip_message)
         else:
-            skip_message = skipping.replace('_', proposal_dir).\
-                                    replace('+', 'proposal').\
-                                    replace('=', str(proposal))
-            display_message(verbose=args.verbose,
-                            log=args.log,
-                            log_type='info',
-                            message=skip_message)
+            print('Did not find any matching files in '\
+                  f'{ptf_dir}')
 
-    return filepaths_batches
+    return batches
 
 
-def move_bad_files(filepaths_to_move, verbose, log):
+def move_bad_files(filepaths_to_move):
     """
     Moves a bad file into the `bad` data directory.
 
@@ -566,12 +418,11 @@ def move_bad_files(filepaths_to_move, verbose, log):
         bad_filepath = os.path.join(bad_filedir, split_filepath[-1])
 
         shutil.move(filepath, bad_filepath)
-        display_message(verbose=verbose, log=log, log_type='info',
-                        message=f'Bad file {split_filepath[-1]} has been '\
-                                f'moved to {os.path.dirname(bad_filepath)}')
+        print(f'Bad file {split_filepath[-1]} has been moved to '\
+              f'{os.path.dirname(bad_filepath)}')
 
 
-def move_downloaded_files(manifest, intended_dir, verbose, log):
+def move_downloaded_files(manifest, intended_dir):
     """
     Moves downloaded files from their default MAST location to the
     correct directory, according to the program, target, and filter
@@ -585,8 +436,6 @@ def move_downloaded_files(manifest, intended_dir, verbose, log):
         String representation of directory path for a
         particular program, target, and filter subset of
         data.
-    verbose
-    log
 
     Returns
     -------
@@ -594,10 +443,7 @@ def move_downloaded_files(manifest, intended_dir, verbose, log):
     error_tbl : `astropy.table.table.Table`
         Table of rows from the manifest that posed an issue.
     """
-    display_message(verbose=verbose,
-                    log=log,
-                    log_type='info',
-                    message='Moving downloaded files...')
+    print('Moving downloaded files...')
 
     problem_indices, problem_rows = [], []
 
@@ -609,22 +455,13 @@ def move_downloaded_files(manifest, intended_dir, verbose, log):
 
         try:
             shutil.move(current_path, new_path)
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='info',
-                            message=f'File moved to {new_path}')
+            print(f'File moved to {new_path}')
 
         except FileNotFoundError:
             problem_indices.append(index)
             problem_rows.append(prod)
 
-            for message in ['FileNotFoundError:',
-                            f'{" "*4} {current_path}',
-                            f'{" "*4} {new_path}']:
-                display_message(verbose=verbose,
-                                log=log,
-                                log_type='error',
-                                message=message)
+            print(f'FileNotFoundError:\n    {current_path}\n    {new_path}')
 
     if len(problem_indices) > 0:
         error_tbl = Table(rows=problem_rows, names=manifest.colnames)
@@ -636,7 +473,7 @@ def move_downloaded_files(manifest, intended_dir, verbose, log):
     return manifest, error_tbl
 
 
-def set_tbl_path(filename, write_dir, overwrite, verbose, log):
+def set_tbl_path(filename, write_dir, overwrite):
     """
     Helper function to set up table location. This is only run if
     `write` in the main pipeline is True.
@@ -652,10 +489,6 @@ def set_tbl_path(filename, write_dir, overwrite, verbose, log):
         The parent dictionary in which to write the table.
     overwrite : Boolean
         Whether to overwrite existing table.
-    verbose : Boolean
-        Whether to print the message.
-    log : Boolean
-        Whether to log the message.
     """
     if write_dir[-1] == '/':
         write_dir = write_dir[:-1]
@@ -664,13 +497,8 @@ def set_tbl_path(filename, write_dir, overwrite, verbose, log):
         filename = f'{filename}.csv'
 
     if not os.path.exists(write_dir):
-        warning_messages = [f'Nonexistent path {write_dir}',
-                            'Using current working directory instead.']
-        for warning_message in warning_messages:
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='warning',
-                            message=warning_message)
+        print(f'Nonexistent path {write_dir}\n'\
+              'Using current working directory instead.')
         write_dir = os.getcwd()
 
     tbl_path = os.path.join(write_dir, filename)
@@ -678,21 +506,9 @@ def set_tbl_path(filename, write_dir, overwrite, verbose, log):
 
     if os.path.exists(tbl_path):
         if overwrite:
-            overwrite_warning = f'Existing table at {tbl_path} and '\
-                                '`overwrite` is set to True.'
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='warning',
-                            message=overwrite_warning)
+            print(f'Table exists at {tbl_path} and `overwrite` is set to True.')
         else:
-            critical_messages = [f'Existing table at {tbl_path} but '\
-                                 '`overwrite` is set to False.',
-                                 'Aborting pipeline run. Please try again '\
-                                 'with compatible arguments.']
-            for critical_message in critical_messages:
-                display_message(verbose=verbose,
-                                log=log,
-                                log_type='critical',
-                                message=critical_message)
+            print(f'Table exists at {tbl_path} and `overwrite` is set to False.'\
+                  '\nAborting pipeline run.\nTry again with valid arguments.')
 
     return tbl_path

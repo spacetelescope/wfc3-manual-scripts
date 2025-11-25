@@ -23,7 +23,7 @@ from astropy.io import fits
 import matplotlib.pyplot as plt
 
 #from ir_file_io import move_downloaded_files
-from ir_toolbox import display_message
+from ir_toolbox import note
 from ir_logging import CaptureOutput
 import time
 
@@ -107,8 +107,7 @@ def setup_calwf3_environs(verbose, log):
     log : Boolean
         Whether to log the message.
     """
-    display_message(verbose=verbose, log=log, log_type='info',
-                    message='Checking calwf3 configuration...')
+    print('Checking calwf3 configuration...')
 
     environment_variables = {'CRDS_SERVER_URL': 'https://hst-crds.stsci.edu',
                              'CRDS_SERVER': 'https://hst-crds.stsci.edu',
@@ -117,17 +116,13 @@ def setup_calwf3_environs(verbose, log):
 
     for env_key, env_value in environment_variables.items():
         os.environ[env_key] = env_value
-        display_message(verbose=verbose, log=log, log_type='info',
-                        message=f"os.environ[{env_key}] has been set to "\
-                                f"{os.environ[env_key]}")
+        print(f"os.environ[{env_key}] has been set to {os.environ[env_key]}")
 
     with CaptureOutput() as outputs:
         os.system('crds list --status')
 
     for output in outputs:
-        display_message(verbose=verbose, log=log, log_type='info',
-                        message=f'\t{output}')
-
+        print(f'\t{output}')
 
 
 def run_bestrefs(raw_filepaths, verbose, log):
@@ -142,20 +137,11 @@ def run_bestrefs(raw_filepaths, verbose, log):
     log : Boolean
         Whether to log the message.
     """
-    display_message(verbose=verbose, log=log, log_type='info',
-                    message='Updating RAW files with bestrefs')
+    print('Updating RAW files with bestrefs')
 
-#    with CaptureOutput() as outputs:
     for raw_filepath in raw_filepaths:
-
-            # #RuntimeError: calwf3.e exited with code ERROR_RETURN:
-#            os.system(f"crds bestrefs --files {raw_filepath}
-#                     --sync_references=1 --update_bestrefs")
         os.system(f"crds bestrefs --files {raw_filepath} -s 1 --update-bestrefs")
 
-#    for output in outputs:
-#        display_message(verbose=verbose, log=log, log_type='info',
-#                        message=f'\t{output}')
 
 def run_calwf3_nrf(raw_files, verbose, log):
     """
@@ -165,8 +151,6 @@ def run_calwf3_nrf(raw_files, verbose, log):
         List of strings representing the full filepaths to
         the newly-downloaded RAW files.
     """
-#    raw_files = glob('my_files/*raw.fits')
-
     for raw_file in raw_files:
         raw = fits.open(raw_file, mode='update')
         raw[0].header['CRCORR'] ='OMIT'
@@ -194,7 +178,7 @@ def rename_flts(raw_files, verbose, log):
         new_name = flt_file.replace('_flt.fits', '_nrf_flt.fits')
         os.rename(flt_file, new_name)
 
-        display_message(verbose=verbose, log=log, log_type='info',
+        note(verbose=verbose, log=log, log_type='info',
                         message=f'Renamed {os.path.dirname(flt_file)} to '\
                                 f'{new_name}')
 
@@ -212,10 +196,10 @@ def rename_flts(raw_files, verbose, log):
 #     log : Boolean
 #         Whether to log the message.
 #     """
-#     display_message(verbose=verbose, log=log, log_type='info',
+#     note(verbose=verbose, log=log, log_type='info',
 #                     message=f'Now attempting to run calwf3 for the first time...')
 #     for raw_filepath in raw_filepaths:
-#         display_message(verbose=verbose, log=log, log_type='info',
+#         note(verbose=verbose, log=log, log_type='info',
 #                         message=f'Working on RAW: {raw_filepath}')
 #         # This is the thing that's failing:
 #         wfc3tools.calwf3(raw_filepath, debug=True, verbose=True, save_tmp=True)
@@ -229,7 +213,7 @@ def rename_flts(raw_files, verbose, log):
 #         #with CaptureOutput() as outputs:
 #         with fits.open(filepath, mode='update') as raw:
 #             raw[0].header['CRCORR'] = 'OMIT'
-#             display_message(verbose=verbose, log=log, log_type='info',
+#             note(verbose=verbose, log=log, log_type='info',
 #                             message=f'Header updated for {os.path.basename(filepath)}')
 
 
@@ -290,9 +274,9 @@ def remove_ima_median_bg(raw_filepaths, verbose, log, plot=False,
                 sci_ext = i+1
                 med = np.median(ima['SCI',sci_ext].data[slice_y, slice_x])
                 ima['SCI',sci_ext].data += total_countrate - med
-                display_message(verbose=verbose, log=log, log_type='info',
-                                message=f'{ima_filepath} [SCI,{sci_ext}] median '\
-                                        f'background = {med:.3f}')
+                note(verbose=verbose, log=log, log_type='info',
+                     message=f'{ima_filepath} [SCI,{sci_ext}] median '\
+                             f'background = {med:.3f}')
                 sci_exts.append(sci_ext)
                 medians.append(med)
 
@@ -302,16 +286,16 @@ def remove_ima_median_bg(raw_filepaths, verbose, log, plot=False,
                 plot_helium_bg(sci_exts, medians, obs_info, plot_settings)
 
                 if plot_settings['save']:
-                    display_message(verbose=verbose, log=log, log_type='info',
-                                    message=f'Saved plot for {obs_info["rootname"]}')
+                    note(verbose=verbose, log=log, log_type='info',
+                         message=f'Saved plot for {obs_info["rootname"]}')
 
             # Turn back on the ramp-fitting for running calwf3 in the next step.
             ima[0].header['CRCORR'] ='PERFORM'
-            display_message(verbose=verbose, log=log, log_type='info',
-                            message=f'Set CRCORR to PERFORM for modified {ima_filepath}')
+            note(verbose=verbose, log=log, log_type='info',
+                 message=f'Set CRCORR to PERFORM for modified {ima_filepath}')
 
-        display_message(verbose=verbose, log=log, log_type='info',
-                        message=f'Closed {ima_filepath}')
+        note(verbose=verbose, log=log, log_type='info',
+             message=f'Closed {ima_filepath}')
 
 
 def plot_helium_bg(sci_exts, medians, obs_info, plot_settings):
@@ -358,11 +342,11 @@ def run_wf3ir(raw_files, verbose, log):
     for raw_file in raw_files:
         ima_file = raw_file.replace('raw','ima')
         if os.path.exists(ima_file):
-            display_message(verbose=verbose, log=log, log_type='info',
-                            message=f'Found new IMA: {ima_file}')
+            note(verbose=verbose, log=log, log_type='info',
+                 message=f'Found new IMA: {ima_file}')
         else:
-            display_message(verbose=verbose, log=log, log_type='info',
-                            message=f'No new IMA found: {ima_file}')
+            note(verbose=verbose, log=log, log_type='info',
+                 message=f'No new IMA found: {ima_file}')
 
 #
 # def rerun_calwf3(ima_filepaths, verbose, log):
@@ -378,17 +362,17 @@ def run_wf3ir(raw_files, verbose, log):
 #             asn = glob(f'{ima_filepath[:-12]}*_asn.fits')[0]
 #             with fits.open(ima_filepath, mode='update') as ima:
 #                 ima[0].header['ASN_TAB'] = asn
-#                 display_message(log=log, verbose=verbose, log_type='info',
+#                 note(log=log, verbose=verbose, log_type='info',
 #                                 message=f'Updated ASN_TAB: {ima[0].header["ASN_TAB"]}')
 #                 if ima[0].header['CRCORR'] != 'PERFORM':
 #                     ima[0].header['CRCORR'] = 'PERFORM'
-#                     display_message(verbose=verbose, log=log, log_type='info',
+#                     note(verbose=verbose, log=log, log_type='info',
 #                                     message='For some reason CRCORR was not set to'\
 #                                             f'PERFORM for {ima_filepath}. Fixed it.')
 #
 #     #        with CaptureOutput() as outputs:
 #         except IndexError:
-#             display_message(log=log, verbose=verbose, log_type='error',
+#             note(log=log, verbose=verbose, log_type='error',
 #                             message=f'No matching ASN file found for {ima_filepath}')
 #
 #
@@ -397,7 +381,7 @@ def run_wf3ir(raw_files, verbose, log):
 #         time.sleep(30)
 
 #        for output in outputs:
-#            display_message(verbose=verbose, log=log, log_type='info',
+#            note(verbose=verbose, log=log, log_type='info',
 #                            message=f'\t{output}')
 
 
@@ -412,20 +396,16 @@ def helium_correction(files, verbose, log):
     rootnames = [f.split('/')[-1].split('_')[0] for f in self.filepaths]
     groups = group_rootnames_by_ipppss(rootnames)
 
-    display_message(verbose=self.args.verbose,
-                    log=self.args.log,
-                    message=f"Number of visits in ObsBatch: {len(groups)}",
-                    log_type='info')
+    note(verbose=verbose, log=log, log_type='info',
+         message=f"Number of visits in ObsBatch: {len(groups)}")
 
     for i, group in enumerate(groups):
         filepaths = [f for f in self.filepaths
                      if f.split('/')[-1].split('_')[0] in groups[group]]
 
-    display_message(verbose=self.args.verbose,
-                    log=self.args.log,
-                    message=f"Visit group {i+1}/{len(groups)}: {len(groups[group])} "\
-                            f"rootnames and {len(filepaths)} files...",
-                    log_type='info')
+    note(verbose=verbose, log=log, log_type='info',
+         message=f"Visit group {i+1}/{len(groups)}: {len(groups[group])} "\
+                 f"rootnames and {len(filepaths)} files...")
 
     run_bestrefs(filepaths, self.args.verbose, self.args.log)
 
@@ -436,13 +416,11 @@ def helium_correction(files, verbose, log):
             new_name = file.replace(f'_{file_type}.', f'_mast_{file_type}.')
             os.rename(file, new_name)
 
-            display_message(verbose=self.args.verbose, log=self.args.log,
-                            log_type='info',
-                            message=f'Renamed {file} to {new_name}')
+            note(verbose=verbose, log=log, log_type='info',
+                 message=f'Renamed {file} to {new_name}')
 
-    display_message(verbose=self.args.verbose, log=self.args.log,
-                    log_type='info',
-                    message=f'Running calwf3 on {len(filepaths)} RAWs...')
+    note(verbose=verbose, log=log, log_type='info',
+         message=f'Running calwf3 on {len(filepaths)} RAWs...')
 
     run_calwf3_nrf(filepaths, verbose=self.args.verbose, log=self.args.log)
 

@@ -1,0 +1,77 @@
+calspec_dir: '/grp/hst/cdbs/calspec'
+
+calspec_catalog:
+    GD153: 'gd153_stiswfcnic_003.fits'
+    GD71: 'gd71_stiswfcnic_003.fits'
+    P330E: 'p330e_stiswfcnic_003.fits'
+    GRW70: 'grw_70d5824_stiswfcnic_003.fits'
+    G191B2B: 'g191b2b_stiswfcnic_003.fits'
+
+cr_pd: 25.0
+mjd_i: 55008
+monitor_dir: '/grp/hst/wfc3v/wfc3photom/data/ir_staring_monitor'
+pam_file: '/grp/hst/wfc3v/wfc3photom/data/ir_pamfile/ir_wfc3_map.fits'
+programs:
+    - 11451
+    - 11552
+    - 11903
+    - 11926
+    - 11936
+    - 12333
+    - 12334
+    - 12357
+    - 12698
+    - 12699
+    - 12702
+    - 13088
+    - 13089
+    - 13092
+    - 13094
+    - 13573
+    - 13575
+    - 13576
+    - 13579
+    - 13711
+    - 14021
+    - 14024
+    - 14384
+    - 14386
+    - 14544
+    - 14883
+    - 14992
+    - 14994
+    - 15113
+    - 15582
+    - 16030
+    - 16415
+    - 16579
+    - 17015
+    - 17361
+    - 17681
+    - 17961
+
+stage_dir: '/user/mmarinelli/ir_phot/stage'
+
+targets:
+    - 'GD153'
+    - 'GRW70'
+    - 'GD71'
+    - 'P330E'
+    - 'G191B2B'
+
+tds_2024:
+    F098M: 0.120
+    F105W: 0.120
+    F110W: 0.120
+    F125W: 0.075
+    F127M: 0.075
+    F126N: 0.075
+    F128N: 0.075
+    F130N: 0.075
+    F132N: 0.075
+    F139M: 0.060
+    F140W: 0.060
+    F153M: 0.060
+    F160W: 0.060
+    F164N: 0.060
+    F167N: 0.060

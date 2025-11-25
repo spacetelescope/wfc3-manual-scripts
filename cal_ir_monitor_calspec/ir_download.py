@@ -1,8 +1,10 @@
+# pylint: disable=E1101
 """
-Functions to enable downloading of IR
-standard star staring mode calibration
-data.
+Functions to enable downloading of IR standard star
+staring mode calibration data.
 
+
+python cal_ir_monitor_calspec.py --name 2025-11-12_test_vblin_alldata --trial --get_new_data --proposals 12699 12702 13088 13089 13092 13094 13573 13575 13576 13579 13711 14021 14024 14384 14386 14544 14883 14992 14994 15113 15582 16030 16415 16579 17015 17361 17681 17961 --helium --linearity
 Author
 ------
     Mariarosa Marinelli, 2023
@@ -14,8 +16,66 @@ from astropy.table import Table, vstack
 from astroquery.mast import Observations
 
 from ir_file_io import check_subdirectory, filter_file_type, move_downloaded_files
-from ir_logging import display_message
 from ir_toolbox import resolve_targnames, SIMPLE_TARGS
+
+
+def query_for_data(**params):
+    """
+    Essentially a wrapper function for the astroquery.mast
+    Observations class. Also removes any blanks or grisms
+    that may be returned due to search parameters.
+
+    Returns
+    -------
+    obs_all : `astropy.table.table.Table`
+        Table of all observations.
+    """
+    obs_all = Observations.query_criteria(instrument_name='WFC3/IR',
+                                          provenance_name='CALWF3',
+                                          **params)
+    for filter_to_remove in ['G102', 'G141', 'BLANK']:
+        obs_all = obs_all[obs_all['filters'] != filter_to_remove]
+
+    print(f'Found {len(obs_all)} matching observations.')
+
+    return obs_all
+
+
+def make_subdirs_from_obs(obs_tbl, data_dir):
+    """
+    sorts observation table
+    """
+    obs_tbls = {}
+
+    proposals = sorted(list(set(obs_tbl['proposal_id'])))
+    obs_ps = [obs_tbl[obs_tbl['proposal_id'] == p] for p in proposals]
+
+    for (p, proposal) in enumerate(proposals):
+        dir_p = check_subdirectory(parent_dir=data_dir, sub_name=proposal)
+
+        obs_ps[p]['resolved_target_name'] = [resolve_targnames(t, simplify=True)
+                                             for t in obs_ps[p]['target_name']]
+
+        # Use list of resolved targets to build second layer of directories.
+        targets = sorted(list(set(obs_ps[p]['resolved_target_name'])))
+        obs_p_ts = [obs_ps[p][obs_ps[p]['resolved_target_name'] == t]
+                    for t in targets]
+
+        for (t, target) in enumerate(targets):
+            dir_p_t = check_subdirectory(parent_dir=dir_p, sub_name=target)
+
+            # Use list of filters to build third layer of directories.
+            filters = sorted(list(set(obs_p_ts[t]['filters'])))
+            obs_p_t_fs = [obs_p_ts[t][obs_p_ts[t]['filters'] == f]
+                          for f in filters]
+
+            for (f, filt) in enumerate(filters):
+                dir_p_t_f = check_subdirectory(parent_dir=dir_p_t,
+                                               sub_name=filt)
+
+                obs_tbls[dir_p_t_f] = obs_p_t_fs[f]
+
+    return obs_tbls
 
 
 def retrieve_data(args, dirs, **params):
@@ -42,72 +102,27 @@ def retrieve_data(args, dirs, **params):
     -------
     download_manifest : `astropy.table.table.Table`
     """
-    for message in ['', 'Querying MAST for data matching specified parameters:',
-                    f'{params}']:
-        display_message(verbose=args.verbose, log=args.log, log_type='info',
-                        message=message)
+    print(f'\nQuerying MAST for data matching parameters: {params}')
 
     download_manifest = Table()
-    obs_all = Observations.query_criteria(instrument_name='WFC3/IR',
-                                          provenance_name='CALWF3',
-                                          **params)
-    for filter_to_remove in ['G102', 'G141', 'BLANK']:
-        obs_all = obs_all[obs_all['filters'] != filter_to_remove]
 
-    display_message(verbose=args.verbose, log=args.log, log_type='info',
-                    message=f'Found {len(obs_all)} matching observations.')
+    obs_all = query_for_data(**params)
 
     if len(obs_all) > 0:
-        # Use list of proposals to build first layer of directories.
-        proposals = sorted(list(set(obs_all['proposal_id'])))
-        obs_ps = [obs_all[obs_all['proposal_id'] == p] for p in proposals]
+        obs_tbls = make_subdirs_from_obs(obs_all, dirs['data_dir'])
 
-        for proposal, obs_p in zip(proposals, obs_ps):
-            dir_p = check_subdirectory(parent_dir=dirs['data_dir'],
-                                       sub_name=proposal,
-                                       verbose=args.verbose, log=args.log)
+        for sub_dir, sub_obs in obs_tbls.items():
+            sub_prods = filter_file_type(sub_obs, args.helium,
+                                         args.linearity)
+            sub_prods, continue_download = redownload_wrapper(sub_prods,
+                                                              sub_dir,
+                                                              args)
 
-            resolved_col = [resolve_targnames(t, simplify=True,
-                                              verbose=args.verbose, log=args.log)
-                            for t in obs_p['target_name']]
-            obs_p['resolved_target_name'] = resolved_col
+            if continue_download:
+                manifest = Observations.download_products(sub_prods)
+                manifest, _ = move_downloaded_files(manifest, sub_dir)
 
-            # Use list of resolved targets to build second layer of directories.
-            targets = sorted(list(set(obs_p['resolved_target_name'])))
-            obs_p_ts = [obs_p[obs_p['resolved_target_name'] == t]
-                        for t in targets]
-
-            for target, obs_p_t in zip(targets, obs_p_ts):
-                dir_p_t = check_subdirectory(parent_dir=dir_p,
-                                             sub_name=target,
-                                             verbose=args.verbose,
-                                             log=args.log)
-
-                # Use list of filters to build third layer of directories.
-                filters = sorted(list(set(obs_p_t['filters'])))
-                obs_p_t_fs = [obs_p_t[obs_p_t['filters'] == f] for f in filters]
-
-                for filt, obs_p_t_f in zip(filters, obs_p_t_fs):
-                    dir_p_t_f = check_subdirectory(parent_dir=dir_p_t,
-                                                   sub_name=filt,
-                                                   verbose=args.verbose,
-                                                   log=args.log)
-
-                    prods_p_t_f = filter_file_type(obs_p_t_f, args.helium_corr,
-                                                   args.verbose, args.log)
-
-                    prods_p_t_f, continue_download = redownload_wrapper(prods_p_t_f,
-                                                                        dir_p_t_f,
-                                                                        args)
-
-                    if continue_download:
-                        manifest = Observations.download_products(prods_p_t_f)
-                        manifest, _ = move_downloaded_files(manifest,
-                                                            dir_p_t_f,
-                                                            verbose=args.verbose,
-                                                            log=args.log)
-
-                        download_manifest = vstack([download_manifest, manifest])
+                download_manifest = vstack([download_manifest, manifest])
 
     else:
         download_manifest = Table()
@@ -153,28 +168,23 @@ def redownload_wrapper(prods_p_t_f, dir_p_t_f, args):
             planned_path = os.path.join(dir_p_t_f,
                                         os.path.basename(planned_filename))
             if os.path.exists(planned_path):
-                display_message(verbose=args.verbose, log=args.log,
-                                message=f'Found existing file: {planned_path}',
-                                log_type='info')
+                print(f'Found existing file: {planned_path}')
                 prods_p_t_f = prods_p_t_f[prods_p_t_f['productFilename'] != planned_filename]
 
     number_removed = len(planned_filenames) - len(prods_p_t_f)
 
     if number_removed == 0:
-        display_message(verbose=args.verbose, log=args.log, log_type='info',
-                        message=f'Downloading {len(prods_p_t_f)} files...')
+        print(f'Downloading {len(prods_p_t_f)} files...')
         continue_download = True
 
     else:
         if len(prods_p_t_f) == 0:
-            display_message(verbose=args.verbose, log=args.log, log_type='info',
-                            message='All files in download queue already exist.')
+            print('All files in download queue already exist.')
             continue_download = False
 
         else:
-            display_message(verbose=args.verbose, log=args.log, log_type='info',
-                            message=f'Removed {number_removed} files. '\
-                                    f'Downloading {len(prods_p_t_f)} files...')
+            print(f'Removed {number_removed} files.\n'\
+                  f'Downloading {len(prods_p_t_f)} files...')
             continue_download = True
 
     return prods_p_t_f, continue_download
@@ -221,8 +231,7 @@ def get_new_data_wrapper(args, dirs):
     if args.targets == 'all':
         search_targets = []
         for targ in SIMPLE_TARGS:
-            resolved = resolve_targnames(targname=targ, simplify=False,
-                                         verbose=args.verbose, log=args.log)
+            resolved = resolve_targnames(targname=targ, simplify=False)
             search_targets.extend(resolved)
 
     else:
@@ -231,17 +240,13 @@ def get_new_data_wrapper(args, dirs):
             search_targets = []
             for targ in args.targets:
                 resolved_targnames = resolve_targnames(targname=targ,
-                                                       simplify=False,
-                                                       verbose=args.verbose,
-                                                       log=args.log)
+                                                       simplify=False)
                 search_targets.extend(resolved_targnames)
 
         # Only have one target? Much simpler.
         else:
             search_targets = resolve_targnames(targname=args.targets,
-                                               simplify=False,
-                                               verbose=args.verbose,
-                                               log=args.log)
+                                               simplify=False)
 
     if args.filters == 'all':
         _ = retrieve_data(args, dirs, proposal_id=args.proposals,

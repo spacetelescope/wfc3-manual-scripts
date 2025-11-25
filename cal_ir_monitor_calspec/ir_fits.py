@@ -26,10 +26,6 @@ def get_ext_data(filepath):
     Parameters
     ----------
     stare_obj : `ObsBatch`
-    verbose : Boolean
-        Whether to print the message.
-    log : Boolean
-        Whether to log the message.
 
     Returns
     -------
@@ -44,10 +40,10 @@ def get_ext_data(filepath):
         err_arr = fits_file[2].data
         dq_arr = fits_file[3].data
 
-        return data_arr, err_arr, dq_arr
+    return data_arr, err_arr, dq_arr
 
 
-def get_hdr_info(filepath, verbose, log):
+def get_hdr_info(filepath):
     """Extract information from FITS headers.
 
     Helper function to extract needed header info into a
@@ -56,10 +52,6 @@ def get_hdr_info(filepath, verbose, log):
     Parameters
     ----------
     stare_obj : `ObsBatch`
-    verbose : Boolean
-        Whether to print the message.
-    log : Boolean
-        Whether to log the message.
 
     Returns
     -------
@@ -67,17 +59,17 @@ def get_hdr_info(filepath, verbose, log):
         Dictionary of stripped header information, wherein
         keys correspond to header card names and values are
         the header card values.
+
+        - cd1_1, cd1_2, cd2_1, cd2_2: partials for WCS transformations
+        - photflam, photfnu, photzpt, photbw, photplam: TDS photometry
     """
     hdr_info = {}
     keywords = ['rootname', 'proposid', 'targname', 'filter', 'aperture',     # set parameters
-                'expstart', 'exptime', 'linenum', 'bunit',                    # observing info
+                'expstart', 'exptime', 'linenum', 'bunit', 'scan_typ',        # observing info
                 'subarray', 'subtype', 'samp_seq', 'nsamp', 'sampzero',       # ins. config. params
                 'ltv1', 'ltv2', 'crpix1', 'crpix2', 'crval1', 'crval2',       # coordinates
-                'cd1_1', 'cd1_2',                                             # partials for
-                'cd2_1', 'cd2_2',                                             # WCS transformations
-                'photflam', 'photfnu', 'photzpt',                             # time-dependent
-                'photbw', 'photplam',                                         # photometric calib.
-                #'mdrizsky',                                                  # Astrodrizzle sky BG
+                'cd1_1', 'cd1_2', 'cd2_1', 'cd2_2',
+                'photflam', 'photfnu', 'photzpt', 'photbw', 'photplam',
                 'bpixtab', 'biasfile', 'crrejtab', 'darkfile',                # calib. files
                 'pfltfile', 'imphttab', 'idctab', 'mdriztab']                 # calib. files
 
@@ -91,11 +83,11 @@ def get_hdr_info(filepath, verbose, log):
                 hdr_info[keyword] = str(combined_hdr[keyword.upper()])
             elif keyword == 'targname':
                 hdr_info[keyword] = resolve_targnames(targname=pri_hdr[keyword],
-                                                      simplify=True,
-                                                      verbose=verbose, log=log)
+                                                      simplify=True)
             else:
                 hdr_info[keyword] = combined_hdr[keyword.upper()]
 
         hdr_info['expstart_decimalyear'] = get_decimalyear(hdr_info['expstart'])
+        print(hdr_info['ltv1'])
 
         return hdr_info

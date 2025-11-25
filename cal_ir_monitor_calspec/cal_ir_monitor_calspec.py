@@ -5,7 +5,8 @@ Pipeline for IR staring mode standard star photometry monitor.
 Usage
 -----
 
-python cal_ir_monitor_calspec.py --trial --verbose --log --get_new_data --run_ap_phot --ap_phot_flt --helium_corr
+python cal_ir_monitor_calspec.py --trial
+    --get_new_data --run_ap_phot --ap_phot_flt --helium_corr
 
     This monitor is primarily designed to run from the
     command line, with a total of 22 possible configurable
@@ -13,8 +14,7 @@ python cal_ir_monitor_calspec.py --trial --verbose --log --get_new_data --run_ap
     flags, and 13 pipeline parameters.
 
         > python ir_phot_pipeline.py [-n NAME] [--trial]
-              [--verbose] [--log] [--get_new_data] [--redownload]
-              [--drizzle] [--storm] [--run_ap_phot]
+              [--get_new_data] [--redownload] [--run_ap_phot]
               [--proposals PROPOSALS [PROPOSALS ...]]
               [--targets TARGETS [TARGETS ...]]
               [--filters FILTERS [FILTERS ...]]
@@ -36,20 +36,21 @@ python cal_ir_monitor_calspec.py --trial --verbose --log --get_new_data --run_ap
 
         > python cal_ir_monitor_calspec.py --help
 
+    Addionally, the `config.yaml` file contains configuration
+    settings.
+
 Author
 ------
     Mariarosa Marinelli, 2023-2025
 """
 
-import os
+from dataclasses import dataclass, field
 import warnings
-from glob import glob
 
 from astropy.io import fits
 from astropy.table import Table
 import numpy as np
 from photutils.aperture import CircularAnnulus, CircularAperture, aperture_photometry
-from photutils.detection import DAOStarFinder
 from photutils.segmentation import detect_sources, detect_threshold, SourceCatalog
 
 from pyql.database.ql_database_interface import session, Main, Anomalies
@@ -60,14 +61,41 @@ from wfc3_phot_tools.staring_mode.rad_prof import RadialProfile
 from ir_download import get_new_data_wrapper
 from ir_file_io import initialize_directories, locate_data, move_bad_files, set_tbl_path
 from ir_fits import get_ext_data, get_hdr_info
-#from only_helium import only_helium
-from ir_logging import command_line_logging, display_message
 from ir_plotting import plot_flt_sources
 from ir_syn import make_syn_targets
-from ir_toolbox import display_args, make_phot_cols, parse_args, PAM
+from ir_td import correct_tds
+from ir_toolbox import CR_PD, display_args, make_phot_cols, parse_args, PAM
 
 
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+
+with fits.open(PAM) as pam_fits:
+    PAM_ARR = pam_fits[1].data
+
+
+
+
+@dataclass
+class BatchMetadata:
+    """Stores general metadata for a batch of observations.
+
+    TKTK """
+    paths: []
+    proposal: int = None
+    targname: str = None
+    filt: str = None
+
+
+@dataclass
+class SyntheticPhotometry:
+    """
+    TKTK
+    """
+    #model: np.ndarray = None   # The model array for synthetic photometry TK
+    #flux: float = None   # The flux value for synthetic photometry TK
+    syn_phot_row: any = None
+    syn_phot_cr: float = None
 
 
 class ObsBatch():
@@ -98,7 +126,7 @@ class ObsBatch():
         Count number of flagged pixels in DQ cutout.
     flt_apply_pam(pam_filepath)
         Applies pixel area map to FLT data.
-    flt_find_sources(nsigma, npixels, edge_pixels, plot, plot_dir, cr_pd)
+    flt_find_sources(plot_dir)
         Identifies sources in FLT data.
     find_sources_drz(fwhm=1.2, threshold=10.)
         TK in progress.
@@ -108,13 +136,11 @@ class ObsBatch():
     flt_photometry(self, syn_target, plot_dir)
         Does photometry on batch of files.
 
-    Notes
-    -----
-      - Should either initialize with list of FLT files (then
-        drizzle and do photometry and/or just do photometry),
-        or with a specific drizzled file (and .coo ?)
     """
-    def __init__(self, proposal, targname, filt, filepaths, args):
+    def __init__(self, args, param_dict,
+                 metadata = BatchMetadata,
+                 synthetic = SyntheticPhotometry):
+    #proposal, targname, filt, filepaths, args):
         """
         Parameters
         ----------
@@ -133,361 +159,219 @@ class ObsBatch():
             Arguments.
         """
         self.args = args
-        self.proposal = proposal
-        self.targname = targname
-        self.filt = filt
-        self.file_type = args.file_type#.lower()
-        self.filepaths = filepaths                  # raw files if helium corr on
-        self.ltv1 = None
-        self.ltv2 = None
-        self.source_tbl = None
-        self.coords = None
         self.phot_tbl = None
-        self.ql_root = None
-        self.ql_flags = None
-        self.exposure_file = None
-        self.rootname = None
-        self.hdr = None
-        self.data_arr = None
-        self.err_arr = None
-        self.dq_arr = None
-        self.data_corr = None
-        self.syn_phot_row = None
-        self.syn_phot_mag = None
-        self.syn_phot_cr = None
-        self.source_row = None
-        self.xcentroid = None
-        self.ycentroid = None
-        self.dq_buffer = None
-        self.dq_cutout = None
-        self.dq_count = None
-        self.phot_ap = None
-        self.sky_ap = None
-        self.recentered_x = None
-        self.recentered_y = None
-        self.detx = None
-        self.dety = None
+        self.meta = metadata
+        self.syn = synthetic
+        self.image = None
 
-        if (self.filt in ['F105W', 'F110W']) and self.args.helium_corr:
-            display_message(verbose=self.args.verbose,
-                            log=self.args.log,
-                            message="Commencing helium correction....",
-                            log_type='info')
+        self.setup(param_dict)
+        #self._get_metadata()
 
-            dirname = os.path.dirname(self.filepaths[0])
-            staging = '/grp/hst/wfc3v/wfc3photom/data/ir_staring_monitor/stage'
-            only_helium(dirname, staging)
-
-
-    def flt_dq_cutout(self, buffer):
-        """Count number of flagged pixels in DQ cutout.
-
-        Parameters
-        ----------
-        self : `ObsBatch`
-            Staring mode observation object.
-        buffer : int
-            Width in pixels around the detected source to
-            include in the DQ cutout. A 3-pixel buffer will
-            produce a 7x7 pixel cutout, since the detected
-            source centroid is the center pixel.
-
-        Returns
-        -------
-        dq_cutout : array-like
-            Square cutout around the detected source, with
-            width equal to 2n + 1, where n = `buffer`.
-        dq_count : int
-            Number of pixels in `dq_cutout` that have at
-            least one DQ flag.
+    def setup(self, param_dict):
         """
-        index_x = int(self.xcentroid)
-        index_y = int(self.ycentroid)
-
-        dq_cutout = self.dq_arr[index_y-buffer:index_y+buffer,
-                                index_x-buffer:index_x+buffer]
-        dq_count = np.sum(dq_cutout > 0.)
-
-        return dq_cutout, dq_count
-
-
-    def flt_apply_pam(self, pam_filepath):
-        """Applies pixel area map to FLT data.
-
-        To correct for geometric distortion, FLT data
-        is multiplied by the pixel area map.
-
-        Parameters
-        ----------
-        self : `ObsBatch`
-            Staring mode observation object.
-        pam_filepath : str
-            String representation of the path to the
-            pixel area map files.
-
-        Notes
-        -----
-            - TK: make generalizable for both detectors.
+        setup
         """
-        _dy, _dx = self.data_arr.shape
+        self._get_metadata(param_dict['proposal'],
+                           param_dict['target'],
+                           param_dict['filt'],
+                           param_dict['filepaths'])
 
-        # from Varun's code: not sure why we do this
-        self.ltv1 = int(-1*self.hdr['ltv1'])
-        self.ltv2 = int(-1*self.hdr['ltv2'])
-
-        y_bounds = (self.ltv2, self.ltv2 + _dy)
-        x_bounds = (self.ltv1, self.ltv1 + _dx)
-
-        with fits.open(pam_filepath) as pam_fits:
-            pam = pam_fits[1].data
-
-        pam_sec = pam[y_bounds[0]:y_bounds[1], x_bounds[0]:x_bounds[1]]
-        corr_data = self.data_arr * pam_sec
-
-        return corr_data
-
-
-    def compare_detected_sources_phot(self, props_tbl, edge_pixels, cr_pd):
-        """Compare sources to synthetic target.
-
-        First, checks detected source(s) against the shape
-        of the data array to make sure the observation(s)
-        are within a certain pixel margin of the edges.
-        This margin right now is set to:
-            `args.annulus` + `args.dannulus`
-
-        Any sources that are too close to the edge by this
-        metric are removed from `props_tbl`. If no sources
-        remain, then this function returns `None`. If any
-        sources do remain, a quick round of photometry is
-        performed.
-
-        The source with the smallest percent difference
-        between the measured and synthetic count rates
-        should ideally be the actual source; one last check
-        is performed to ensure that the measured count rate
-        is within a 25% percent difference threshold. If it
-        is, then this function returns the corresponding
-        `props_tbl` row. Otherwise, it returns `None`.
-
-        Parameters
-        ----------
-        self : `ObsBatch`
-            Staring mode observation object.
-        props_tbl : `astropy.table.table.Table`
-            Table with identified sources' properties.
-        edge_pixels : int
-            Limit for source location relative to the edges
-            of the detector (sub)array.
-        cr_pd : float
-            Threshold for percent difference between source
-            count rate and synthetic count rate.
-
-        Returns
-        -------
-        use_source : `astropy.table.row.Row` or NoneType
-            Row corresponding to detected source to use for
-            photometry. If no detected source is inside the
-            edge margins and within 25% of the synthetic
-            count rate, then `use_source` is `None`.
-        props_tbl : `astropy.table.table.Table`
-            Table with identified sources' properties, and
-            added columns:
-                'within_edge' : str
-                    Values are either 'y' or 'n'.
-                'sources_pd' : float
-                    Values are either 9999., indicating
-                    that the source was too close to the
-                    edge, or the percent difference between
-                    the source measured count rate and the
-                    synthetic count rate.
-        messages : list of str
-            String(s) to be logged/printed, communicating
-            the outcome of the detected sources.
+    def _get_metadata(self, proposal, targname, filt, paths):
         """
-        xmin = ymin = edge_pixels
-        xmax = self.data_corr.shape[0] - edge_pixels
-        ymax = self.data_corr.shape[1] - edge_pixels
-
-        within_edge = []
-        for row in props_tbl:
-            xcentroid = row['xcentroid']
-            ycentroid = row['ycentroid']
-
-            if (xcentroid > xmin) and (xcentroid < xmax) \
-                and (ycentroid > ymin) and (ycentroid < ymax):
-                within_edge.append('n')
-            else:
-                within_edge.append('y')
-
-        props_tbl['within_edge'] = within_edge
-
-        not_within_edge_tbl = props_tbl[props_tbl['within_edge'] == 'n']
-
-        if len(not_within_edge_tbl) == 0:
-            use_source = None
-
-            if len(props_tbl) == 1:
-                message = '  The only detected source is'
-            else:
-                message = f'  All {len(props_tbl)} detected sources are'
-
-            messages = [f'{message} within {edge_pixels} pixels '\
-                        'of the detector/subarray edge.',
-                        f'{" "*4} Observation will not be used for photometry.']
-
-        else:
-            sources_cr = []
-            for row in props_tbl:
-                # To make sure length of list equals length of OG table:
-                if row['within_edge'] == 'y':
-                    sources_cr.append(9999.)
-
-                else:
-                    xcentroid = row['xcentroid']
-                    ycentroid = row['ycentroid']
-
-                    phot_ap = CircularAperture([(xcentroid, ycentroid)], r=3)
-                    sky_ap = CircularAnnulus([(xcentroid, ycentroid)],
-                                             r_in=14, r_out=19)
-
-                    row_phot = iraf_style_photometry(phot_ap, sky_ap,
-                                                     self.data_corr,
-                                                     error_array=self.err_arr,
-                                                     bg_method='median',
-                                                     epadu=1.)[0]
-                    sources_cr.append(row_phot['flux'])
-
-            sources_pd = [100 * np.abs(source_cr - self.syn_phot_cr)/self.syn_phot_cr
-                          if source_cr != 9999. else 9999.
-                          for source_cr in sources_cr]
-
-            props_tbl['sources_pd'] = sources_pd
-
-            # If the smallest percent difference between the
-            # source count rate and the synthetic count rate
-            # is less than 25%, then we'll use it
-            if np.min(sources_pd) < cr_pd:
-                use_source = props_tbl[sources_pd.index(np.min(sources_pd))]
-                if len(props_tbl) == 1:
-                    message = '  1 source found.'
-                else:
-                    message = f'  {len(props_tbl)} total sources found.'
-                messages = [message,
-                            f'{" "*4} Using source at '\
-                            f'x={use_source["xcentroid"]}, '\
-                            f'y={use_source["ycentroid"]}']
-
-            else:
-                use_source = None
-
-                if len(not_within_edge_tbl) == 1:
-                    message = '  Measured count rate of detected source is'
-                else:
-                    message = '  Measured count rate of all '\
-                              f'{len(not_within_edge_tbl)} detected sources are'
-
-                messages = [f'{message} greater than {cr_pd}% '\
-                            'different from synthetic target count rate.',
-                            f"{' '*4} Exposure won't be used for photometry."]
-
-        return use_source, props_tbl, messages
+        get metadata
+        """
+        self.meta.proposal = proposal
+        self.meta.targname = targname
+        self.meta.filt = filt
+        self.meta.paths = paths
 
 
-    def flt_find_sources(self, nsigma, npixels, edge_pixels, plot_dir, cr_pd=25.):
-        """Identifies sources in FLT data.
+    def get_synthetic_phot(self, syn_target):
+        """
+        Extract appropriate row in synthetic target photometry table.
+        """
+        # TKTKTK
+        self.syn.syn_phot_row = syn_target.phot_table[\
+                            syn_target.phot_table['filter'] == \
+                            self.meta.filt][0]
+        # For ease, assign these values their own attributes.
+        # Yeah this is hacky and I should have split this up more.
+#        self.syn.syn_phot_mag = self.syn.syn_phot_row['syn_mag']
+        self.syn.syn_phot_cr = self.syn.syn_phot_row['syn_cr']
+
+
+    def batch_photometry(self, syn_target, plot_dir):
+        """Does photometry on batch of files.
 
         Parameters
         ----------
-        self : `ObsBatch`
-            Staring mode observation object.
-        nsigma : float or int
-            The number of standard deviations per pixel
-            above the background for which to consider a
-            pixel as possibly being part of a source.
-            Passed to the `detect_threshold()` function
-            from `photutils.segmentation`.
-        npixels : int
-            The minimum number of connected pixels, each
-            greater than threshold, that an object must
-            have to be detected. Used in `detect_sources()`
-            function from `photutils.segmentation`.
+        syn_targ : `synTarget`
+            Synthetic target with multiple bandpasses
+            and observations corresponding to filters
+            set by `args.filters`.
         plot_dir : str
-            Directory to which plot should be saved.
-        cr_pd : float
-            Threshold for percent difference between source
-            count rate and synthetic count rate. Default is
-            25%.
 
         Returns
         -------
-        use_source : `astropy.table.row.Row` or NoneType
-            If at least one source is found, should return
-            the row of the properties row corresponding to
-            the matching source. If no viable sources is
-            found, returns `None`.
+        phot_tbl : `astropy.table.Table`
         """
-        # Create a threshold image from the PAM-corrected data.
-        threshold = detect_threshold(self.data_corr, nsigma=nsigma)
-        # Now use the threshold image to make a segmentation map.
-        segm = detect_sources(self.data_corr, threshold, npixels=npixels)
+        # Begin creating the rows of our photometry table.
+        phot_rows = []
+        bad_files = []
 
-        # If no sources are detected, the segmentation map will be `None`.
-        if segm is None:
-            use_source = None
-            display_message(verbose=self.args.verbose, log=self.args.log,
-                            log_type='warning', message='No sources found.')
+        self.get_synthetic_phot(syn_target)
 
+        # Iterate over filepaths in observation batch.
+        # Reassign values each time - we won't need them again.
+        for path in self.meta.paths:
+            # Reassign values each time.
+            self.image = ObsImage(path, self.args)
+
+            if self.image.check_quality(self.syn.syn_phot_cr, plot_dir):
+                phot_rows.append(self.image.make_phot_row())
+
+            else:
+                bad_files.append(self.image.path)
+
+        move_bad_files(bad_files)
+
+        # Use the last image in the batch to generate columns.
+        phot_cols = make_phot_cols(self.image.data.hdr,
+                                   self.image.data.dq_buffer)
+        if len(phot_rows) > 0:
+            phot_tbl = Table(rows=phot_rows, names=phot_cols)
         else:
-            props = SourceCatalog(self.data_corr, segm)
-            props_tbl = props.to_table()
+            phot_tbl = None
 
-            use_source, props_tbl, \
-            messages = self.compare_detected_sources_phot(props_tbl, edge_pixels,
-                                                          cr_pd)
-            for message in messages:
-                display_message(verbose=self.args.verbose, log=self.args.log,
-                                log_type='info', message=message)
-
-            if self.args.plot_sources:
-                with warnings.catch_warnings():
-                    # Not even sure this is doing anything to be honest.
-                    warnings.filterwarnings("ignore",
-                                            message="findfont: Generic family"\
-                                                    " 'serif' not found because"\
-                                                    " none of the following "\
-                                                    "families were found: "\
-                                                    "Computer Modern Roman")
-
-                    plot_flt_sources(self, props_tbl, use_source, cr_pd,
-                                     verbose=self.args.verbose, log=self.args.log,
-                                     plot_dir=plot_dir)
-
-        return use_source
+        return phot_tbl
 
 
-    def find_sources_drz(self, data, fwhm=1.2, threshold=10.):
-        """Identifies sources in DRZ data.
+def run_process(args, dirs, write, overwrite):
+    """
+    Run photometry for all data (with optional reprocessing
+    controlled by the `--linearity` and `--helium` command
+    line arguments).
 
-        Parameters
-        ----------
-        self : `ObsBatch`
-            Staring mode observation object.
-        data : something
-        fwhm : float or int
-            Full width at half-maximum.
-        threshold : float or int
-            Threshold over background.
+    Parameters
+    ----------
+    args : `argparse.Namespace` or `InteractiveArgs`
+        Arguments.
+    dirs : dict
+        Dictionary of directories.
+    write : Boolean
+        Determines if the photometry table should be saved.
+        Default is True.
+    overwrite : Boolean
+        Determines if an existing photometry table should
+        be overwritten. Default is False.
+    """
+    # Dictionary keys are batch keys in the format `'proposal/target/filter'`,
+    # while the values are lists of file paths in that directory.
+    filepaths_batches = locate_data(args, dirs['data_dir'])
 
-        Notes
-        -----
-            - Currently unused.
-            - Parameters not optimized yet
+    if args.run_ap_phot:
+        # Set up synthetic targets first, to use for each batch.
+        syn_targets = make_syn_targets(filepaths_batches, args.radius)
+
+        # Iterate through batches.
+        for batch_key, filepaths in filepaths_batches.items():
+            proposal, target, filt = batch_key.split('/')
+
+            # Essentially bookmark where the batch starts.
+            print(f'{"-"*28}\nInitializing batch of files:\n'\
+                  f'PROGRAM: {proposal}\nTARGET:  {target}\n'\
+                  f'FILTER:  {filt}\nFILES:   {len(filepaths)}')
+
+            batch = ObsBatch(args,
+                             {'proposal': proposal, 'target': target,
+                             'filt': filt, 'filepaths': filepaths})
+            # TKTK after reprocessing, update filepaths
+#            batch.meta.paths = [f.replace('_raw', '_flt') for f in batch.filepaths]
+
+#                if resolved_calwf3_issues:
+            # Run photometry for this batch of files.
+            phot_table = batch.batch_photometry(syn_targets[target],
+                                                dirs['plots_dir'])
+
+            if phot_table is not None and write:
+                # Aborts if overwrite is False but table exists.
+                tbl_path = set_tbl_path(f'phot_{proposal}_{target}_{filt}.csv',
+                                        args.write_dir, overwrite)
+                phot_table.write(tbl_path, overwrite=overwrite, format='csv')
+                print(f'Wrote table to:\n    {tbl_path}')
+
+            # Clean up after yourself.
+            del batch
+
+        print(f'{"-"*32}\nFinished photometry for batches:')
+        for key in filepaths_batches:
+            print(f'    {key}')
+        print('*'*80)
+
+
+@dataclass
+class AnomalyFlags:
+    """Stores flags related to anomalies in the observation."""
+    ql_root: str = None
+    satellite_trail: bool = None
+    guidestar_failure: bool = None
+    use_obs_for_phot: bool = None
+
+@dataclass
+class ImagePhotometry:
+    """Stores data related to detected sources and their photometry."""
+    centroid: [None, None] #list = field(default_factory=list)
+    det_coords: [None, None] #list = field(default_factory=list) #float = None
+    recentered: [None, None] #list = field(default_factory=list) #float = None
+    #ycentroid: float = None
+    phot_ap: None
+    sky_ap: None
+    source_row: Table() = None
+    dq_count: int = None
+    #recentered_y: float = None
+    #dety: float = None
+
+@dataclass
+class ImageData:
+    """Stores the main observation data arrays and corrections."""
+    hdr: {} = None
+    #ltv: list = field(default_factory=list)
+    ltv1: float = None
+    ltv2: float = None
+    data_arr: np.ndarray = None
+    err_arr: np.ndarray = None
+    dq_arr: np.ndarray = None
+    dq_cutout: np.ndarray = None
+    data_corr: np.ndarray = None
+
+
+class ObsImage():
+    """image class"""
+    def __init__(self, filepath, args,
+                 data = ImageData,
+                 photometry = ImagePhotometry,
+                 anomalies = AnomalyFlags):
         """
-        dsf = DAOStarFinder(fwhm=fwhm, threshold=threshold)
-        self.source_tbl = dsf.find_stars(self, data)
-        self.coords = list(zip(self.source_tbl['xcentroid'],
-                               self.source_tbl['ycentroid']))
+        initialize ObsImage
+        """
+        print(f'Created ObsImage: {filepath}')
+        self.path = filepath
+        self.args = args
+        self.data = data
+        self.phot = photometry
+        self.anom = anomalies
+        self.syn_cr = None
+
+        self.get_data()
+
+
+    def get_data(self):
+        """
+        Wrapper.
+        """
+        self.data.hdr = get_hdr_info(self.path)
+        (self.data.data_arr, self.data.err_arr,
+            self.data.dq_arr) = get_ext_data(self.path)
 
 
     def check_for_anomalies(self):
@@ -527,14 +411,13 @@ class ObsBatch():
             Quicklook as containing a satellite trail.
         """
         # Use ql_root to avoid mixups between transmission characters.
-        self.ql_root = self.hdr['rootname'][:-1]
-        self.ql_flags = {}
+        self.anom.ql_root = self.data.hdr['rootname'][:-1]
 
         results = session.query(Main.ql_root, Anomalies.ql_root,
                                 Anomalies.satellite_trail,
                                 Anomalies.guidestar_failure).\
                           join(Main, Main.ql_root == Anomalies.ql_root).\
-                          filter(Main.ql_root == self.ql_root).\
+                          filter(Main.ql_root == self.anom.ql_root).\
                           all()
 
         # If no results are returned, then the observation has not been added
@@ -546,8 +429,8 @@ class ObsBatch():
         # Quicklooker reaches this image), this serves as a nifty shortcut. Not
         # in the Anomalies table? Must not be any anomalies.
         if len(results) == 0:
-            self.ql_flags['satellite_trail'] = False
-            self.ql_flags['guidestar_failure'] = False
+            self.anom.satellite_trail = False
+            self.anom.guidestar_failure = False
 
         # Just because it's in the Anomalies table doesn't mean it must have a
         # satellite trail or guidestar failure. An image with only the diamond
@@ -556,351 +439,476 @@ class ObsBatch():
         # trail/guidestar failure columns.
         # TO DO : this is populating masked items for some reason. Fix.
         else:
-            self.ql_flags['satellite_trail'] = results[0].satellite_trail
-            self.ql_flags['guidestar_failure'] = results[0].guidestar_failure
+            self.anom.satellite_trail = results[0].satellite_trail
+            self.anom.guidestar_failure = results[0].guidestar_failure
 
         # Don't use images with GS fails for calibration photometry. Duh.
-        if self.ql_flags['guidestar_failure']:
-            use_obs_for_phot = 'False'
+        if self.anom.guidestar_failure:
+            self.anom.use_obs_for_phot = False
 
-            if self.ql_flags['satellite_trail']:
-                satellite_trail = 'True'
-            else:
-                satellite_trail = 'False'
-
-            display_message(verbose=self.args.verbose, log=self.args.log,
-                            log_type='error',
-                            message='  Affected by guidestar failure, '\
-                                    'cannot use for photometry.')
+            print('  Affected by guidestar failure, cannot use for photometry.')
 
         # Images with satellite trails should be inspected more closely later.
         else:
-            use_obs_for_phot = 'True'
+            self.anom.use_obs_for_phot = True
 
-            if self.ql_flags['satellite_trail']:
-                satellite_trail = 'True'
-                display_message(verbose=self.args.verbose, log=self.args.log,
-                                log_type='warning',
-                                message='  Affected by satellite trail. Use '\
-                                        'with caution.')
+            if self.anom.satellite_trail:
+                print('  WARNING: Affected by satellite trail. Use with caution.')
             else:
-                satellite_trail = 'False'
-                display_message(verbose=self.args.verbose, log=self.args.log,
-                                log_type='info',
-                                message='  Unaffected by guidestar failure '\
-                                        'or satellite trails.')
-
-        return use_obs_for_phot, satellite_trail
+                print('  Unaffected by guidestar failure or satellite trails.')
 
 
-    def flt_photometry(self, syn_target, plot_dir):
-        """Does photometry on batch of files.
+    def check_margin(self, det_tbl):
+        """check if source center is in the margin"""
+        margin_px = 6
+
+        xmin = ymin = margin_px
+        xmax = self.data.data_corr.shape[0] - margin_px
+        ymax = self.data.data_corr.shape[1] - margin_px
+
+        in_margin = []
+        for row in det_tbl:
+            row_xcentroid = row['xcentroid']
+            row_ycentroid = row['ycentroid']
+
+            if xmin < row_xcentroid < xmax and ymin < row_ycentroid < ymax:
+#            if (row_xcentroid > xmin) and (row_xcentroid < xmax) \
+#                and (row_ycentroid > ymin) and (row_ycentroid < ymax):
+                in_margin.append(False)
+            else:
+                in_margin.append(True)
+
+        return in_margin, margin_px
+
+
+    def correct_syn_cr(self, sources_cr):
+        """not used right now"""
+        print('Not in use', sources_cr)
+
+
+    def compare_detected_sources_phot(self, det_tbl):
+        """Compare sources to synthetic target.
+
+        First, checks detected source(s) against the shape
+        of the data array to make sure the observation(s)
+        are within a certain pixel margin of the margins.
+        This margin right now is set to:
+            `args.annulus` + `args.dannulus`
+
+        Any sources that are too close to the margin by
+        this metric are removed from `det_tbl`. If no
+        sources remain, then this function returns `None`.
+        If any sources do remain, a quick round of
+        photometry is performed.
+
+        The source with the smallest percent difference
+        between the measured and synthetic count rates
+        should ideally be the actual source; one last check
+        is performed to ensure that the measured count rate
+        is within a 25% percent difference threshold. If it
+        is, then this function returns the corresponding
+        `det_tbl` row. Otherwise, it returns `None`.
+
+        Currently hardcoded:
+            margin_px : int
+                Limit for source location relative to the
+                margins of the detector (sub)array.
+            cr_pd : float
+                Threshold for percent difference between source
+                count rate and synthetic count rate.
 
         Parameters
         ----------
-        syn_targ : `synTarget`
-            Synthetic target with multiple bandpasses
-            and observations corresponding to filters
-            set by `args.filters`.
-        plot_dir : str
+        self : `ObsBatch`
+            Staring mode observation object.
+        det_tbl : `astropy.table.table.Table`
+            Table with identified sources' properties.
 
         Returns
         -------
-        phot_tbl : `astropy.table.Table`
+        source_row : `astropy.table.row.Row` or NoneType
+            Row corresponding to detected source to use for
+            photometry. If no detected source is inside the
+            margins and within 25% of the synthetic
+            count rate, then `source_row` is `None`.
+        det_tbl : `astropy.table.table.Table`
+            Table with identified sources' properties, and
+            added columns:
+                'in_margin' : str
+                    Values are either True or False.
+                'sources_pd' : float
+                    Values are either 9999., indicating
+                    that the source was too close to the
+                    margin, or the percent difference
+                    between the source measured count rate
+                    and the synthetic count rate.
         """
-        # Begin creating the rows of our photometry table.
-        phot_rows = []
-        bad_files = []
-        
-        # Refactor to use subclass?
-        # Iterate over filepaths in observation batch.
-        # Reassign values each time - we won't need them again.
-        for i, filepath in enumerate(self.filepaths):
-            self.exposure_file = filepath
-            self.rootname = fits.getval(self.exposure_file, 'ROOTNAME', 0)
+        # defaults:
+        det_tbl['cr_pd'] = CR_PD
 
-            condition1 = fits.getval(self.exposure_file, 'SCAN_TYP', 0) == 'N'
+        det_tbl['in_margin'], margin_px = self.check_margin(det_tbl)
 
-            if not condition1:
-                messages = ['.', f'{self.rootname}:', 'Skipped:'
-                            f'{" "*4}- Spatial scan observation.']
-                for message in messages:
-                    display_message(verbose=self.args.verbose, log=self.args.log,
-                                    log_type='info', message=message)
+        not_in_margin_tbl = det_tbl[~det_tbl['in_margin']]
 
-                bad_files.append(self.exposure_file)
+        if len(not_in_margin_tbl) == 0:
+            source_row = None
+
+            print(f'  All ({len(det_tbl)}) detected source(s) are within '\
+                  f'{margin_px} pixels of detector/subarray margin.\n'\
+                  'Observation will not be used for photometry.')
+
+        else:
+            sources_cr = []
+
+            for row in det_tbl:
+                # To make sure length of list equals length of OG table:
+                if row['in_margin']:
+                    sources_cr.append(9999.)
+
+                else:
+                    #xcen = row['xcentroid']
+                    #ycen = row['ycentroid']
+
+                    det_phot_ap = CircularAperture([
+                                    (row['xcentroid'], row['ycentroid'])], r=3)
+                    det_sky_ap = CircularAnnulus([
+                                    (row['xcentroid'], row['ycentroid'])],
+                                    r_in=14, r_out=19)
+
+                    row_phot = iraf_style_photometry(det_phot_ap, det_sky_ap,
+                                    self.data.data_corr,
+                                    error_array=self.data.err_arr,
+                                    bg_method='median', epadu=1.)[0]
+                    sources_cr.append(row_phot['flux'])
+
+            sources_pd = [100 * np.abs(source_cr - self.syn_cr) / \
+                          self.syn_cr
+                          if source_cr != 9999. else 9999.
+                          for source_cr in sources_cr]
+
+            det_tbl['sources_pd'] = sources_pd
+
+            # If the smallest percent difference between the
+            # source count rate and the synthetic count rate
+            # is less than 25%, then we'll use it
+            if np.min(sources_pd) < CR_PD:
+                source_row = det_tbl[sources_pd.index(np.min(sources_pd))]
+                self.phot.centroid = (source_row['xcentroid'],
+                                      source_row['ycentroid'])
+                #self.phot.ycentroid = source_row['ycentroid']
+
+                if len(det_tbl) == 1:
+                    print('  1 source found.')
+                else:
+                    print(f'  {len(det_tbl)} total sources found.')
+                print(f'    Using source at x={self.phot.centroid[0]}, '\
+                      f'y={self.phot.centroid[1]}')
 
             else:
-                self.hdr = get_hdr_info(self.exposure_file, self.args.verbose,
-                                        self.args.log)
+                source_row = None
 
-                display_message(verbose=self.args.verbose, log=self.args.log,
-                                log_type='info', message=f'{self.hdr["rootname"]}:')
-
-                # Don't use GS fails, warn for any satellite trails.
-                use_obs_for_phot, satellite_trail = self.check_for_anomalies()
-                # Second condition is that there are no QL flags that
-                # indicate this observation can't be used for photometry.
-                condition2 = use_obs_for_phot == 'True'
-
-                # Get data arrays from FITS file. This is the basis
-                # of the third condition.
-                self.data_arr, self.err_arr, self.dq_arr = get_ext_data(self.exposure_file)
-                condition3 = not isinstance(self.dq_arr, type(None))
-
-                # Apply pixel area map to correct geometric distortion.
-                self.data_corr = self.flt_apply_pam(PAM)
-
-                # Extract appropriate row in synthetic target photometry table.
-                self.syn_phot_row = syn_target.phot_table[\
-                                    syn_target.phot_table['filter'] == \
-                                    self.hdr['filter']][0]
-                # For ease, assign these values their own attributes.
-                # Yeah this is hacky and I should have split this up more.
-                self.syn_phot_mag = self.syn_phot_row['syn_mag']
-                self.syn_phot_cr = self.syn_phot_row['syn_cr']
-
-
-                #edge_pixels = self.args.annulus + self.args.dannulus  # 19 by default
-                edge_pixels = 6  # Lowered threshold. Will this crash?
-
-                # Find sources in corrected data.
-                # TK May need to build in iterative re-scaling of `npixels` for N bands.
-                self.source_row = self.flt_find_sources(nsigma=3.0, npixels=15,
-                                                        edge_pixels=edge_pixels,
-                                                        plot_dir=plot_dir) # TKTK
-
-                # Fourth condition is that at least one matching source
-                # is identified. `self.source_row` will be `None` if no
-                # viable sources can be found.
-                if not isinstance(self.source_row, type(None)):
-                    condition4 = True
+                if len(not_in_margin_tbl) == 1:
+                    message = 'Measured count rate of detected source is'
                 else:
-                    condition4 = False
-#                condition4 = isinstance(self.source_row, type(None))
+                    message = 'Measured count rate of all '\
+                              f'{len(not_in_margin_tbl)} detected sources are'
 
-                # Entonces, only do photometry if all conditions are met.
-                if condition2 and condition4 and condition3:
-                    self.xcentroid = self.source_row['xcentroid']
-                    self.ycentroid = self.source_row['ycentroid']
+                print(f"  {message} greater than {CR_PD}% different from "\
+                      "synthetic target count rate.\n    "\
+                      "Exposure won't be used for photometry.")
 
-                    # Check the data quality flags.
-                    self.dq_buffer = 3
-                    dq_cutout, dq_count = self.flt_dq_cutout(buffer=self.dq_buffer)
-                    self.dq_cutout, self.dq_count = dq_cutout, dq_count
-
-                    # Create aperture/annulus objects.
-                    self.phot_ap = CircularAperture([(self.xcentroid, self.ycentroid)],
-                                                    r=self.args.radius)
-                    self.sky_ap = CircularAnnulus([(self.xcentroid, self.ycentroid)],
-                                                  r_in=self.args.annulus,
-                                                  r_out=self.args.annulus + \
-                                                        self.args.dannulus)
-
-                    # Make first pass fit with RadialProfile,
-                    # recenter source and re-fit.
-                    prof = RadialProfile(self.xcentroid, self.ycentroid, self.data_corr,
-                                         recenter=True, fit=False, r=1)
-                    self.recentered_x, self.recentered_y = prof.x, prof.y
-                    prof = RadialProfile(self.recentered_x, self.recentered_y,
-                                         self.data_corr, recenter=False,
-                                         fit=True, r=2)
-                    # Set dummy values for invalid FWHM or chi-squared values.
-                    if np.isnan(prof.fwhm):
-                        prof.fwhm = -9999.
-                    if np.isnan(prof.chisquared):
-                        prof.chisquared = -9999.
-
-                    # Leftover from testing background subtraction methods.
-                    # Can probably remove at some point.
-                    method_fluxes, method_flux_errs = [], []
-                    back_methods = ['mean', 'median', 'mode']
-
-                    for method in back_methods:
-                        # TO DO: use wrapper to display output.
-                        phot_row = iraf_style_photometry(self.phot_ap,
-                                                         self.sky_ap,
-                                                         self.data_corr,
-                                                         error_array=self.err_arr,
-                                                         bg_method=method,
-                                                         epadu=1.)[0]
-                        method_fluxes.append(phot_row['flux'])
-                        method_flux_errs.append(phot_row['flux_error'])
-
-                    # TO DO: use wrapper to display output
-                    photutils_sum = aperture_photometry(apertures=self.phot_ap,
-                                                        data=self.data_corr)\
-                                                             ['aperture_sum'][0]
-
-                    # Get statistics/measurements for background annulus.
-                    # TO DO: rethink parameter naming for this one?
-                    bg_stats = make_aperture_stats_tbl(self.data_corr, self.sky_ap)[0]
-
-                    # Leftover from testing background subtraction methods.
-                    obs_syn_crs = []
-                    for i, method in enumerate(back_methods):
-                        obs_syn_crs.append(method_fluxes[i]/self.syn_phot_cr)
-
-                    obs_syn_photutils = photutils_sum/self.syn_phot_cr
-
-                    # Have to revert LTV_ to original form to calc detx and dety
-                    self.detx = self.xcentroid - (self.ltv1 / -1)
-                    self.dety = self.ycentroid - (self.ltv2 / -1)
-
-                    file_row = [self.exposure_file, self.file_type,
-                                self.args.radius, self.args.annulus,
-                                self.args.dannulus, self.args.back_method,
-                                satellite_trail]
-
-                    file_row.extend([value for key, value in self.hdr.items()])
-
-                    # If nothing has been added to row list,
-                    # i.e. earlier filepaths didn't have detections,
-                    # or this is the first iteration altogether. 
-                    if len(phot_rows) == 0:
-                        phot_cols = make_phot_cols(self.hdr, self.dq_buffer)
-
-                    file_row.extend([self.xcentroid, self.ycentroid,
-                                     self.recentered_x, self.recentered_y,
-                                     prof.fwhm, prof.chisquared,
-                                     self.ltv1, self.ltv2, self.detx, self.dety,
-                                     bg_stats['aperture_median'],
-                                     bg_stats['aperture_mode'],
-                                     bg_stats['aperture_mean'],
-                                     bg_stats['aperture_std'],
-                                     bg_stats['aperture_nonnan_area'],
-                                     phot_row['phot_ap_area'],
-                                     method_fluxes[0], method_flux_errs[0],
-                                     method_fluxes[1], method_flux_errs[1],
-                                     method_fluxes[2], method_flux_errs[2],
-                                     self.syn_phot_mag, self.syn_phot_cr,
-                                     obs_syn_crs[0],  obs_syn_crs[1],
-                                     obs_syn_crs[2], photutils_sum,
-                                     obs_syn_photutils, np.std(self.data_corr),
-                                     self.dq_count])
-
-                    phot_rows.append(file_row)
-
-                else:
-                    messages = ['  Skipped:']
-
-                    if not condition2:
-                        messages.append(f'{" "*4}- Observation affected by '
-                                        'guidestar failure.')
-                        bad_files.append(self.exposure_file)
-
-                    if not condition4:
-                        messages.append(f'{" "*4}- No viable sources detected.')
-                        # TKTK
-                    if not condition3:
-                        messages.append(f'{" "*4}- DQ array is empty.')
-                        bad_files.append(self.exposure_file)
-
-                    for message in messages:
-                        display_message(verbose=self.args.verbose, log=self.args.log,
-                                        log_type='info', message=message)
+        return source_row, det_tbl
 
 
-        move_bad_files(bad_files, verbose=self.args.verbose, log=self.args.log)
+    def flt_dq_cutout(self, buffer=3):
+        """Count number of flagged pixels in DQ cutout.
 
-        if len(phot_rows) == 0:
-            phot_tbl = None
+        Parameters
+        ----------
+        self : `ObsBatch`
+            Staring mode observation object.
+        buffer : int
+            Width in pixels around the detected source to
+            include in the DQ cutout. A 3-pixel buffer will
+            produce a 7x7 pixel cutout, since the detected
+            source centroid is the center pixel.
+
+        Returns
+        -------
+        dq_cutout : array-like
+            Square cutout around the detected source, with
+            width equal to 2n + 1, where n = `buffer`.
+        dq_count : int
+            Number of pixels in `dq_cutout` that have at
+            least one DQ flag.
+        """
+        self.data.dq_buffer = buffer
+        i_x = int(self.phot.centroid[0])
+        i_y = int(self.phot.centroid[1])
+
+        self.data.dq_cutout = self.data.dq_arr[(i_y - buffer):(i_y + buffer),
+                                               (i_x - buffer):(i_x + buffer)]
+        self.data.dq_count = np.sum(self.data.dq_cutout > 0.)
+
+
+    def flt_apply_pam(self):
+        """Applies pixel area map to FLT data.
+
+        To correct for geometric distortion, FLT data
+        is multiplied by the pixel area map.
+
+        Parameters
+        ----------
+        self : `ObsBatch`
+            Staring mode observation object.
+        """
+        _dy, _dx = self.data.data_arr.shape
+
+        # from Varun's code: not sure why we do this
+        self.data.ltv1 = int(-1*self.data.hdr['ltv1'])
+        self.data.ltv2 = int(-1*self.data.hdr['ltv2'])
+
+        y_bounds = (self.data.ltv2, self.data.ltv2 + _dy)
+        x_bounds = (self.data.ltv1, self.data.ltv1 + _dx)
+
+        pam_sec = PAM_ARR[y_bounds[0]:y_bounds[1], x_bounds[0]:x_bounds[1]]
+        self.data.data_corr = self.data.data_arr * pam_sec
+
+
+    def flt_find_sources(self, plot_dir):
+        """Identifies sources in FLT data.
+
+        Parameters
+        ----------
+        self : `ObsBatch`
+            Staring mode observation object.
+        nsigma : float or int
+            The number of standard deviations per pixel
+            above the background for which to consider a
+            pixel as possibly being part of a source.
+            Passed to the `detect_threshold()` function
+            from `photutils.segmentation`.
+        npixels : int
+            The minimum number of connected pixels, each
+            greater than threshold, that an object must
+            have to be detected. Used in `detect_sources()`
+            function from `photutils.segmentation`.
+        cr_pd : float
+            Threshold for percent difference between source
+            count rate and synthetic count rate. Default is
+            25%.
+
+        Returns
+        -------
+        source_row : `astropy.table.row.Row` or NoneType
+            If at least one source is found, should return
+            the row of the properties row corresponding to
+            the matching source. If no viable sources is
+            found, returns `None`.
+        """
+        # Defaults:
+        nsigma = 3.0
+        npixels = 15
+
+        # Create a threshold image from the PAM-corrected data.
+        threshold = detect_threshold(self.data.data_corr, nsigma=nsigma)
+        # Now use the threshold image to make a segmentation map.
+        segm = detect_sources(self.data.data_corr, threshold, npixels=npixels)
+
+        # If no sources are detected, the segmentation map will be `None`.
+        if segm is None:
+            source_row = None
+            print('No sources found.')
+
         else:
-            phot_tbl = Table(rows=phot_rows, names=phot_cols)
+            det_tbl = SourceCatalog(self.data.data_corr, segm).to_table()
 
-        return phot_tbl
+            source_row, det_tbl = self.compare_detected_sources_phot(det_tbl)
+
+            if self.args.plot_sources:
+                with warnings.catch_warnings():
+                    # Not even sure this is doing anything to be honest.
+                    warnings.filterwarnings("ignore",
+                                            message="findfont: Generic family"\
+                                                    " 'serif' not found because"\
+                                                    " none of the following "\
+                                                    "families were found: "\
+                                                    "Computer Modern Roman")
+
+                    plot_flt_sources(self, det_tbl, source_row, plot_dir)
+
+        return source_row
 
 
-def run_process(args, dirs, write, overwrite):
-    """Run drizzling and/or photometry for pipeline.
+    def check_quality(self, syn_cr, plot_dir):
+        """
+        Checks if image meets all four criteria.
+        """
+        self.syn_cr = syn_cr
+        condition1 = self.data.hdr['scan_typ'] == 'N'
 
-    Parameters
-    ----------
-    args : `argparse.Namespace` or `InteractiveArgs`
-        Arguments.
-    dirs : dict
-        Dictionary of directories.
-    write : Boolean
-        Determines if the photometry table should be saved.
-        Default is True.
-    overwrite : Boolean
-        Determines if an existing photometry table should
-        be overwritten. Default is False.
-    """
-    # TO DO: update this assignation once drizzling is implemented.
-    process_name = 'photometry'
+        if condition1:
+            # Don't use GS fails, warn for any satellite trails.
+            self.check_for_anomalies()
 
-    if process_name is None:
-        error_messages = ['Drizzling & aperture photometry flags are both set'\
-                          'to `False`.', 'Will not take any further action.']
-        for error_message in error_messages:
-            display_message(verbose=args.verbose, log=args.log,
-                            log_type='error', message=error_message)
+            # Second condition is that there are no QL flags that
+            # indicate this observation can't be used for photometry.
+            # Technically this is redundant.
+            condition2 = self.anom.use_obs_for_phot is True
 
-    else:
-        # Dictionary keys are batch keys in the format `'proposal/target/filter'`,
-        # while the values are lists of file paths in that directory.
-        filepaths_batches = locate_data(args, dirs['data_dir'])
+            # Check DQ array from FITS file. This is the basis
+            # of the third condition.
+            condition3 = not isinstance(self.data.dq_arr, type(None))
 
-        if args.run_ap_phot:
-            # Set up synthetic targets first, to use for each batch.
-            syn_targets = make_syn_targets(filepaths_batches, args.radius,
-                                           verbose=args.verbose, log=args.log)
+            # Apply pixel area map to correct geometric distortion.
+            self.flt_apply_pam()
 
-            # Iterate through batches.
-            for batch_key, filepaths in filepaths_batches.items():
-                proposal, target, filt = batch_key.split('/')
-                filename = f'phot_{proposal}_{target}_{filt}.csv'
+            # Find sources in corrected data.
+            # TK May need to build in iterative re-scaling of `npixels` for N bands.
+            self.phot.source_row = self.flt_find_sources(plot_dir) # TKTK
 
-                # Essentially bookmark where the batch starts.
-                status = f'Initializing batch of files for {process_name}:'
-                dashes = '-'*len(status)
-                messages = [dashes, status,
-                            f'PROGRAM: {proposal}',
-                            f'TARGET:  {target}',
-                            f'FILTER:  {filt}',
-                            f'FILES:   {len(filepaths)}']
-                for message in messages:
-                    display_message(verbose=args.verbose, log=args.log,
-                                    log_type='info', message=message)
+            # Fourth condition is that at least one matching source
+            # is identified. `self.source_row` will be `None` if no
+            # viable sources can be found.
+            #if not isinstance(obs_img.phot.source_row, type(None)):
+            #    condition4 = True
+            #else:
+            #    condition4 = False
+            condition4 = not isinstance(self.phot.source_row, type(None))
 
-#            if args.drizzle:
-#                pass
+            if not condition2:
+                print(f'{" "*4}- Observation affected by guidestar failure.')
 
-            #if args.run_ap_phot:
-                if write:
-                    # Aborts if overwrite is False but table exists.
-                    tbl_path = set_tbl_path(filename, write_dir=args.write_dir,
-                                            overwrite=overwrite,
-                                            verbose=args.verbose, log=args.log)
+            if not condition4:
+                print(f'{" "*4}- No viable sources detected.')
 
-                # Caution: target should be in simplest form.
-                batch = ObsBatch(proposal, target, filt, filepaths, args)
-                batch.filepaths = [f.replace('_raw', '_flt') for f in batch.filepaths]
+            if not condition3:
+                print(f'{" "*4}- DQ array is empty.')
 
-#                if resolved_calwf3_issues:
-                    # Run photometry for this batch of files.
-                phot_table = batch.flt_photometry(syn_targets[target],
-                                                  dirs['plots_dir'])
+        else:
+            print(f'{" "*4}- Spatial scan')
 
-                if phot_table is not None:
-                    phot_table.write(tbl_path, overwrite=overwrite, format='csv')
-                    messages = ['Wrote table to:', f'    {tbl_path}']
-                    for message in messages:
-                        display_message(verbose=args.verbose, log=args.log,
-                                        log_type='info', message=message)
+        return condition1 and condition2 and condition3 and condition4
 
-                # Clean up after yourself.
-                del batch
 
-        status = f'Finished {process_name} for batches:'
-        messages = [f'{"-"*len(status)}', status]
-        messages.extend([f'    {batch_key}' for batch_key in filepaths_batches])
-        messages.append('*'*80)
+    def get_obs_syn_crs(self, fluxes, photutils_flux):
+        """
+        get observed-to-synthetic count rate ratios
+        """
+        obs_syn_crs = []
+        for flux in fluxes:
+            obs_syn_crs.append(flux / self.syn_cr)
 
-        for message in messages:
-            display_message(verbose=args.verbose, log=args.log,
-                            log_type='info', message=message)
+        obs_syn_crs.append(photutils_flux / self.syn_cr)
+
+        return obs_syn_crs
+
+
+    def make_phot_row(self):
+        """
+        do photometry on one image
+        """
+        self.phot.centroid = [self.phot.source_row['xcentroid'],
+                              self.phot.source_row['ycentroid']]
+
+        # Check the data quality flags.
+        self.flt_dq_cutout()
+
+        # Create aperture/annulus objects.
+        self.phot.phot_ap = CircularAperture(
+            [(self.phot.centroid[0], self.phot.centroid[1])],
+            r=self.args.radius)
+
+        self.phot.sky_ap = CircularAnnulus(
+            [(self.phot.centroid[0], self.phot.centroid[1])],
+            r_in=self.args.annulus,
+            r_out=self.args.annulus + self.args.dannulus)
+
+        # Make first pass fit with RadialProfile,
+        # recenter source and re-fit.
+        prof = RadialProfile(self.phot.centroid[0],
+                    self.phot.centroid[1],
+                    self.data.data_corr,
+                    recenter=True, fit=False, r=1)
+
+        self.phot.recentered = [prof.x, prof.y]
+        prof = RadialProfile(self.phot.recentered[0],
+                    self.phot.recentered[1],
+                    self.data.data_corr,
+                    recenter=False, fit=True, r=2)
+
+
+        # Set dummy values for invalid FWHM or chi-squared values.
+        if np.isnan(prof.fwhm):
+            prof.fwhm = -9999.
+        if np.isnan(prof.chisquared):
+            prof.chisquared = -9999.
+
+        # Leftover from testing background subtraction methods.
+        # Can probably remove at some point.
+        method_fluxes, method_flux_errs = [], []
+        back_methods = ['mean', 'median', 'mode']
+
+        for method in back_methods:
+            # TO DO: use wrapper to display output.
+            iraf_row = iraf_style_photometry(self.phot.phot_ap,
+                            self.phot.sky_ap,
+                            self.data.data_corr,
+                            error_array=self.data.err_arr,
+                            bg_method=method, epadu=1.)[0]
+            method_fluxes.append(iraf_row['flux'])
+            method_flux_errs.append(iraf_row['flux_error'])
+
+        # TO DO: use wrapper to display output
+        photutils_sum = aperture_photometry(
+                            apertures=self.phot.phot_ap,
+                            data=self.data.data_corr)\
+                            ['aperture_sum'][0]
+
+        # Get statistics/measurements for background annulus.
+        # TO DO: rethink parameter naming for this one?
+        bg_stats = make_aperture_stats_tbl(self.data.data_corr, self.phot.sky_ap)[0]
+
+        obs_syn_crs = self.get_obs_syn_crs(method_fluxes, photutils_sum)
+
+        # Have to revert LTV_ to original form to calc detx and dety
+        self.phot.det_coords = [self.phot.centroid[0] \
+                                - (self.data.ltv1 / -1),
+                                self.phot.centroid[1] \
+                                - (self.data.ltv2 / -1)]
+
+        phot_row = [self.path, self.args.radius, self.args.annulus,
+                    self.args.dannulus, self.args.back_method,
+                    self.anom.satellite_trail]
+
+        phot_row.extend([val for key, val in self.data.hdr.items()])
+
+        phot_row.extend([self.phot.centroid[0], self.phot.centroid[1],
+                         self.phot.recentered[0], self.phot.recentered[1],
+                         prof.fwhm, prof.chisquared,
+                         self.data.ltv1, self.data.ltv2,
+                         self.phot.det_coords[0], self.phot.det_coords[1],
+                         bg_stats['aperture_median'],
+                         bg_stats['aperture_mode'],
+                         bg_stats['aperture_mean'],
+                         bg_stats['aperture_std'],
+                         bg_stats['aperture_nonnan_area'],
+                         iraf_row['phot_ap_area'],
+                         method_fluxes[0], method_flux_errs[0],
+                         method_fluxes[1], method_flux_errs[1],
+                         method_fluxes[2], method_flux_errs[2],
+                         self.syn_cr,
+                         obs_syn_crs[0],  obs_syn_crs[1],
+                         obs_syn_crs[2], photutils_sum,
+                         obs_syn_crs[3], np.std(self.data.data_corr),
+                         self.phot.dq_count])
+
+        phot_row.extend([correct_tds(flux, self.data.hdr['expstart'],
+                                     self.data.hdr['filter'])
+                         for flux in method_fluxes])
+
+        return phot_row
+
 
 
 def cal_ir_monitor_calspec(args, dirs):
@@ -911,24 +919,19 @@ def cal_ir_monitor_calspec(args, dirs):
 
     Parameters
     ----------
-    args : 
-    dirs : 
+    args :
+    dirs :
     """
     if args.get_new_data:
         get_new_data_wrapper(args, dirs)
 
-    #if args.helium_corr:
-    #    setup_calwf3_environs(args.verbose, args.log)
-
-    run_process(args, dirs, write=True, overwrite=True)
+    if args.run_ap_phot or args.helium or args.linearity:
+        run_process(args, dirs, write=True, overwrite=True)
 
 
 if __name__ == '__main__':
     # Parse command line arguments.
     parsed_args = parse_args()
-
-    # Set up logging if necessary.
-    command_line_logging(parsed_args)
 
     # Display command line arguments.
     display_args(parsed_args)

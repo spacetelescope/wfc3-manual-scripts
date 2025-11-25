@@ -6,7 +6,7 @@ Functions
 ---------
 check_preexisting_logging()
     Checks if logging is already enabled.
-display_message(verbose, log, log_type, message)
+note(verbose, log, log_type, message)
     Prints and/or logs some message.
 make_timestamp()
     Creates string timestamp for current datetime.
@@ -18,14 +18,13 @@ Classes
 CaptureOutput()
 
 """
+from datetime import datetime
+from io import StringIO
 import logging
 import os
 import sys
 
-from datetime import datetime
-from io import StringIO
-
-MONITOR_DIR = '/grp/hst/wfc3v/wfc3photom/data/ir_staring_monitor'
+from ir_config import CONFIG
 
 
 def check_preexisting_logging():
@@ -46,11 +45,10 @@ def check_preexisting_logging():
         preexisting_logging = False
 
     else:
-        # then logging is already enabled for another file
-        display_message(verbose=True, log=True,
-                        log_type='critical',
-                        message='Logging has already been enabled for file: '\
-                                f'{str(existing_handlers[0]).split(" ")[1]}')
+        # Then logging is already enabled for another file
+        note(verbose=True, log=True, log_type='critical',
+             message='Logging has already been enabled for file: '\
+                     f'{str(existing_handlers[0]).split(" ")[1]}')
         preexisting_logging = True
 
     return preexisting_logging
@@ -64,12 +62,12 @@ def command_line_logging(args):
         Whether to log output for this pipeline run.
     """
     if args.log:
-        log_dir = os.path.join(MONITOR_DIR, 'logs')
+        log_dir = os.path.join(CONFIG['monitor_dir'], 'logs')
         setup_logging(log_dir=log_dir, log_name=args.name)
         logging.info('Logging initialized')
 
 
-def display_message(verbose, log, message, log_type='info'):
+def note(verbose, log, message, log_type='info'):
     """Prints and/or logs some message.
 
     Parameters
@@ -100,11 +98,9 @@ def display_message(verbose, log, message, log_type='info'):
             logging.critical(message)
 
         else:
-            log_type_message = '`display_message()` called with invalid '\
+            log_type_message = '`note()` called with invalid '\
                                f'`log_type` = {log_type}\n'\
                                'Logging the following as `info` message:'
-            if verbose:
-                print(log_type_message)
             logging.warning(log_type_message)
             logging.info(message)
 
@@ -113,33 +109,11 @@ def display_message(verbose, log, message, log_type='info'):
 
 
 
-def make_timestamp():
-    """Creates string timestamp for current datetime.
-
-    Helper function to convert and format current datetime
-    into a string. This string is then used for the name
-    of the pipeline run directory in the scan monitor
-    photometry central store location:
-        /grp/hst/wfc3v/wfc3photom/data/ir_staring_monitor
-
-    Returns
-    -------
-    timestamp : str
-        String representation of current time, in format
-        `YYYY-MM-DD_hh-mm-ss`.
-    """
-    now = str(datetime.now()).split(' ')
-    date = now[0]
-    time = now[1].split('.')[0].replace(':', '-')
-    timestamp = f'{date}_{time}'
-    return timestamp
 
 
-def setup_logging(local=False,
-                  log_dir=os.getcwd(),
+def setup_logging(local=False, log_dir=os.getcwd(),
                   log_name=make_timestamp(),
-                  verbose=True,
-                  log=True):
+                  verbose=True, log=True):
     """Configures pipeline logging for new run.
 
     If pipeline is being run from the command line, this
@@ -169,7 +143,11 @@ def setup_logging(local=False,
         if not os.path.exists(log_dir):
             log_dir = os.getcwd()
     else:
-        log_dir = os.path.join(MONITOR_DIR, 'logs')
+        log_dir = os.path.join(CONFIG['monitor_dir'], 'logs')
+        if not os.path.exists(log_dir):
+            os.mkdir(log_dir)
+            note(verbose=verbose, log=log, log_type='info',
+                 message=f'Made logging directory at {log_dir}')
 
     log_file = os.path.join(log_dir, log_name)
 
@@ -177,33 +155,5 @@ def setup_logging(local=False,
                         format='%(asctime)s - %(levelname)-8s - %(message)s',
                         level=logging.INFO)
 
-#    logger = logging.getLogger("ir_phot_pipeline")
-#    logger.addFilter(FontFilter())
-
-    display_message(verbose=verbose,
-                    log=log,
-                    log_type='info',
-                    message=f'Logging enabled. Writing to file: {log_file}.log')
-
-
-
-class CaptureOutput(list):
-    """
-    Class to capture output from externally-imported
-    functions.
-
-    Parameters
-    ----------
-    list : list of str
-        List of output strings.
-    """
-    def __enter__(self):
-        self._stdout = sys.stdout
-        sys.stdout = self._stringio = StringIO()
-
-        return self
-
-    def __exit__(self, *args):
-        self.extend(self._stringio.getvalue().splitlines())
-        del self._stringio
-        sys.stdout = self._stdout
+    note(verbose=verbose, log=log, log_type='info',
+         message=f'Logging enabled. Writing to file: {log_file}.log')

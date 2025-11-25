@@ -22,7 +22,16 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-from ir_logging import display_message
+def get_ax_ticks(ax):
+    """
+    Helper function to get ticks and labels from current axis.
+    """
+    xticks = ax.get_xticks()
+    yticks = ax.get_yticks()
+    xticklabels = ax.get_xticklabels()
+    yticklabels = ax.get_yticklabels()
+
+    return (xticks, yticks), (xticklabels, yticklabels)
 
 
 def set_plt_rcparams():
@@ -39,7 +48,7 @@ def set_plt_rcparams():
     matplotlib.rcParams['axes.linewidth'] = 1
 
 
-def plot_flt_sources(obs_batch, props_tbl, use_source, cr_pd, verbose, log, plot_dir):
+def plot_flt_sources(obs_img, det_tbl, source_row, plot_dir):
     """Make and save source detection plots.
 
     This function plots the PAM-corrected data of an
@@ -49,9 +58,8 @@ def plot_flt_sources(obs_batch, props_tbl, use_source, cr_pd, verbose, log, plot
             Source(s) too close to the edge of
             the detector.
         yellow:
-            Source(s) with count rate more than
-            `cr_pd` percent different
-            compared to synthetic count rate.
+            Source(s) with count rate that does not match the
+            synthetic count rate.
         cyan:
             Source used for photometry.
 
@@ -67,26 +75,19 @@ def plot_flt_sources(obs_batch, props_tbl, use_source, cr_pd, verbose, log, plot
 
     Parameters
     ----------
-    obs_batch : `ObsBatch`
+    obs_img : `ObsImage`
         Staring mode observation object.
-    props_tbl : `astropy.table.table.Table`
+    det_tbl : `astropy.table.table.Table`
         Table with identified sources' properties.
-    use_source : `astropy.table.row.Row`
+    source_row : `astropy.table.row.Row`
         The row corresponding to the identified source
         that will be used for photometry.
-    cr_pd : float or int
-        Threshold for percent difference between source
-        count rate and synthetic count rate.
-    verbose : Boolean
-        Whether to print the message.
-    log : Boolean
-        Whether to log the message.
     plot_dir : str or path-like
 
     Notes
     ----
       - Even if no source is validated for use in
-        photometry (if `use_source` is `None`), a
+        photometry (if `source_row` is `None`), a
         source detection plot will still be created.
         This is the intended behavior, since the plot
         can then be used to diagnose any issues with
@@ -97,70 +98,57 @@ def plot_flt_sources(obs_batch, props_tbl, use_source, cr_pd, verbose, log, plot
     set_plt_rcparams()
 
     # Make title, directory names, file names, etc.
-    title = obs_batch.exposure_file.split('/data')[-1]
+    title = obs_img.path.split('/data')[-1]
     plot_subdir = os.path.join(plot_dir, 'source_detection')
 
     if not os.path.exists(plot_subdir):
         os.mkdir(plot_subdir)
-        display_message(verbose=verbose,
-                        log=log,
-                        log_type='info',
-                        message=f'Made new directory at {plot_subdir}')
+        print(f'Made new directory at {plot_subdir}')
 
     plot_name = f"{title.split('.fits')[0][1:].replace('/', '-')}.jpg"
     plot_path = os.path.join(plot_subdir, plot_name)
 
     # Set up plot itself.
     fig, ax = plt.subplots(figsize=(7,7))
-    ax.set_title(title)
+    ax.set_title(obs_img.path.split('/data')[-1])
     # Plot image data (corrected for distortion).
-    ax.imshow(obs_batch.data_corr, norm=LogNorm(), origin='lower',
-              cmap='Greys_r', zorder=0)
+    ax.imshow(obs_img.data.data_corr, norm=LogNorm(), origin='lower', zorder=0,
+              cmap='Greys_r')
 
-    xticks = ax.get_xticks()
-    yticks = ax.get_yticks()
-    xticklabels = ax.get_xticklabels()
-    yticklabels = ax.get_yticklabels()
+    ticks, labels = get_ax_ticks(ax)
 
-    if len(props_tbl) > 1:
-        nope_edge = props_tbl[props_tbl['within_edge'] == 'y']
+    if len(det_tbl) > 1:
+        nope_edge = det_tbl[det_tbl['in_margin']]
         if len(nope_edge) > 0:
             ax.scatter(nope_edge['xcentroid'], nope_edge['ycentroid'],
                        marker='o', facecolors='none', edgecolors='#FBD036',
                        lw=3, s=300, label='rejected: proximity to edge')
 
-        if use_source is not None:
-            on_frame = props_tbl[props_tbl['within_edge'] == 'n']
-            nope_cr = on_frame[on_frame['xcentroid'] != use_source['xcentroid']]
+        if source_row is not None:
+            on_frame = det_tbl[~det_tbl['in_margin']]
+            nope_cr = on_frame[on_frame['xcentroid'] != source_row['xcentroid']]
         else:
-            nope_cr = on_frame[on_frame['within_edge'] == 'n']
+            nope_cr = on_frame[on_frame['in_margin']]
 
         if len(nope_cr) > 0:
             ax.scatter(nope_cr['xcentroid'], nope_cr['ycentroid'],
                marker='o', facecolors='none', edgecolors='#ED553B',
-               lw=3, s=300,label=f'rejected: source flux')
+               lw=3, s=300,label='rejected: source flux')
 
-    if use_source is not None:
-        ax.scatter(use_source['xcentroid'], use_source['ycentroid'],
+    if source_row is not None:
+        ax.scatter(source_row['xcentroid'], source_row['ycentroid'],
                    marker='o', facecolors='none', edgecolors='#20639B', lw=3,
                    zorder=10, s=300,
-                   label=f'identified: {obs_batch.targname}')
+                   label=f'identified: {obs_img.meta.targname}')
 
-    ax.set_xticks(xticks[1:-1])
-    ax.set_yticks(yticks[1:-1])
-    ax.set_xticklabels(xticklabels[1:-1])
-    ax.set_yticklabels(yticklabels[1:-1])
+    ax.set_xticks(ticks[0][1:-1])
+    ax.set_yticks(ticks[1][1:-1])
+    ax.set_xticklabels(labels[0][1:-1])
+    ax.set_yticklabels(labels[1][1:-1])
     ax.legend(loc='best', fontsize=10, markerscale=0.5)
     fig.tight_layout()
 
     plt.savefig(plot_path, format='jpg', dpi=200)
     plt.close()
 
-    messages = ['  Source detection/selection plot saved to:',
-                f'{" "*4} {plot_path}']
-
-    for message in messages:
-        display_message(verbose=verbose,
-                        log=log,
-                        log_type='info',
-                        message=message)
+    print(f'  Source detection/selection plot saved to:\n    {plot_path}')
