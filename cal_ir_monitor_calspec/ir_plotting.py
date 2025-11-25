@@ -15,7 +15,7 @@ Functions
         detected sources, color-coded by if they are rejected based on
         proximity to the detector edge, rejected based on the photometry
         compared to the simulated count rate of the observation source, or
-        if it is deemed to be the source. 
+        if it is deemed to be the source.
 """
 import os
 import matplotlib
@@ -33,7 +33,8 @@ def set_plt_rcparams():
                          'axes.edgecolor': 'black'})
     plt.rcParams.update({"font.family": "serif",
                          "font.serif": "cmr10",
-                         "font.size": 14 })
+                         "font.size": 14 ,
+                         "axes.formatter.use_mathtext": True})
 
     matplotlib.rcParams['axes.linewidth'] = 1
 

@@ -2,16 +2,10 @@
 """
 Pipeline for IR staring mode standard star photometry monitor.
 
-Notes
------
-- Right now, just works for FLTs
-- No analysis set up here, all in notebooks
-- Set up function to physically (re)move bad data (GS fail, no source)
-
 Usage
 -----
 
-python ir_phot_pipeline.py --trial --verbose --log --get_new_data --run_ap_phot --ap_phot_flt --helium_corr
+python cal_ir_monitor_calspec.py --trial --verbose --log --get_new_data --run_ap_phot --ap_phot_flt --helium_corr
 
     This monitor is primarily designed to run from the
     command line, with a total of 22 possible configurable
@@ -34,17 +28,17 @@ python ir_phot_pipeline.py --trial --verbose --log --get_new_data --run_ap_phot 
     All arguments have defaults set, so the monitor can be
     run without any arguments at all:
 
-        > python ir_phot_pipeline.py
+        > python cal_ir_monitor_calspec.py
 
     The 22 arguments are explained in greater detail in
     `ir_phot_toolbox.py`, and can also be viewed by using
     the `--help` flag.
 
-        > python ir_phot_pipeline.py --help
+        > python cal_ir_monitor_calspec.py --help
 
 Author
 ------
-    Mariarosa Marinelli, 2023
+    Mariarosa Marinelli, 2023-2025
 """
 
 import os
@@ -58,7 +52,7 @@ from photutils.aperture import CircularAnnulus, CircularAperture, aperture_photo
 from photutils.detection import DAOStarFinder
 from photutils.segmentation import detect_sources, detect_threshold, SourceCatalog
 
-from pyql.database.ql_database_interface import session, Master, Anomalies
+from pyql.database.ql_database_interface import session, Main, Anomalies
 from wfc3_phot_tools.staring_mode.background import make_aperture_stats_tbl
 from wfc3_phot_tools.staring_mode.aperture_phot import iraf_style_photometry
 from wfc3_phot_tools.staring_mode.rad_prof import RadialProfile
@@ -66,14 +60,15 @@ from wfc3_phot_tools.staring_mode.rad_prof import RadialProfile
 from ir_download import get_new_data_wrapper
 from ir_file_io import initialize_directories, locate_data, move_bad_files, set_tbl_path
 from ir_fits import get_ext_data, get_hdr_info
-from only_helium import only_helium
+#from only_helium import only_helium
 from ir_logging import command_line_logging, display_message
 from ir_plotting import plot_flt_sources
 from ir_syn import make_syn_targets
 from ir_toolbox import display_args, make_phot_cols, parse_args, PAM
 
-import warnings
+
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+
 
 class ObsBatch():
     """WFC3/IR standard star staring mode observations.
@@ -535,11 +530,11 @@ class ObsBatch():
         self.ql_root = self.hdr['rootname'][:-1]
         self.ql_flags = {}
 
-        results = session.query(Master.ql_root, Anomalies.ql_root,
+        results = session.query(Main.ql_root, Anomalies.ql_root,
                                 Anomalies.satellite_trail,
                                 Anomalies.guidestar_failure).\
-                          join(Master, Master.ql_root == Anomalies.ql_root).\
-                          filter(Master.ql_root == self.ql_root).\
+                          join(Main, Main.ql_root == Anomalies.ql_root).\
+                          filter(Main.ql_root == self.ql_root).\
                           all()
 
         # If no results are returned, then the observation has not been added
@@ -613,10 +608,10 @@ class ObsBatch():
         -------
         phot_tbl : `astropy.table.Table`
         """
-        # Begin creating the columns and rows of our photometry table.
+        # Begin creating the rows of our photometry table.
         phot_rows = []
-
         bad_files = []
+        
         # Refactor to use subclass?
         # Iterate over filepaths in observation batch.
         # Reassign values each time - we won't need them again.
@@ -639,10 +634,8 @@ class ObsBatch():
                 self.hdr = get_hdr_info(self.exposure_file, self.args.verbose,
                                         self.args.log)
 
-                messages = ['.', f'{self.hdr["rootname"]}:']
-                for message in messages:
-                    display_message(verbose=self.args.verbose, log=self.args.log,
-                                    log_type='info', message=message)
+                display_message(verbose=self.args.verbose, log=self.args.log,
+                                log_type='info', message=f'{self.hdr["rootname"]}:')
 
                 # Don't use GS fails, warn for any satellite trails.
                 use_obs_for_phot, satellite_trail = self.check_for_anomalies()
@@ -762,7 +755,8 @@ class ObsBatch():
                     file_row.extend([value for key, value in self.hdr.items()])
 
                     # If nothing has been added to row list,
-                    # i.e. earlier filepaths didn't have detections:
+                    # i.e. earlier filepaths didn't have detections,
+                    # or this is the first iteration altogether. 
                     if len(phot_rows) == 0:
                         phot_cols = make_phot_cols(self.hdr, self.dq_buffer)
 
@@ -809,7 +803,6 @@ class ObsBatch():
 
         move_bad_files(bad_files, verbose=self.args.verbose, log=self.args.log)
 
-
         if len(phot_rows) == 0:
             phot_tbl = None
         else:
@@ -851,7 +844,7 @@ def run_process(args, dirs, write, overwrite):
 
         if args.run_ap_phot:
             # Set up synthetic targets first, to use for each batch.
-            syn_targets = make_syn_targets(filepaths_batches,
+            syn_targets = make_syn_targets(filepaths_batches, args.radius,
                                            verbose=args.verbose, log=args.log)
 
             # Iterate through batches.
@@ -892,8 +885,8 @@ def run_process(args, dirs, write, overwrite):
 
                 if phot_table is not None:
                     phot_table.write(tbl_path, overwrite=overwrite, format='csv')
-                    messages = ['Wrote table to:', f'    {tbl_path}', dashes]
-                    for messages in message:
+                    messages = ['Wrote table to:', f'    {tbl_path}']
+                    for message in messages:
                         display_message(verbose=args.verbose, log=args.log,
                                         log_type='info', message=message)
 
@@ -910,7 +903,7 @@ def run_process(args, dirs, write, overwrite):
                             log_type='info', message=message)
 
 
-def run_pipeline(args, dirs):
+def cal_ir_monitor_calspec(args, dirs):
     """Run the whole shebang.
 
     Runs the IR photometry pipeline using the parsed
@@ -918,8 +911,8 @@ def run_pipeline(args, dirs):
 
     Parameters
     ----------
-    args :
-    dirs :
+    args : 
+    dirs : 
     """
     if args.get_new_data:
         get_new_data_wrapper(args, dirs)
@@ -944,4 +937,4 @@ if __name__ == '__main__':
     run_dirs = initialize_directories(parsed_args)
 
     # Showtime.
-    run_pipeline(parsed_args, run_dirs)
+    cal_ir_monitor_calspec(parsed_args, run_dirs)
