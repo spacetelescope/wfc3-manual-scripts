@@ -236,7 +236,7 @@ def plot_scan_phot_over_time_plotly(args, dirs):
             fig_name = f'{filter}_scan_phot_amp_{amp}.html'
             fig_list.append(fig)
             fig_name_list.append(fig_name)
-            path_to_ql=os.path.join('/grp/hst/wfc3a/manual_outputs/uvis_scan_photometry/', fig_name)
+            path_to_ql=os.path.join('/grp/hst/wfc3a/manual_outputs/uvis_scan_photometry/display_outputs/', fig_name)
             fig.write_html(path_to_ql, full_html=False)
 
     return fig_list, fig_name_list
