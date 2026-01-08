@@ -1,3 +1,11 @@
+"""
+Auxillary functions for the WFC3/UVIS spatial scan monitor.
+
+Author
+------
+    Mariarosa Marinelli
+"""
+
 import argparse
 from argparse import ArgumentParser
 from datetime import datetime
@@ -7,9 +15,11 @@ import os
 import sys
 
 MONITOR_DIR = '/grp/hst/wfc3v/wfc3photom/data/uvis_scan_monitor'
-SCAN_PROGRAMS = [14878, 15398, 15583, 16021, 16416, 16580, 17016, 17362]
-CORE_FILTERS = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
+SCAN_PROGRAMS = [14878, 15398, 15583, 16021, 16416, 16580, 17016, 17362, 17682]
 CORE_TARGETS = ['GD153', 'GRW70', 'P330E']
+CORE_FILTERS = ['F218W', 'F225W', 'F275W', 'F336W', 'F438W', 'F606W', 'F814W']
+JAY_FILTERS = ['F275W', 'F336W', 'F438W', 'F606W', 'F814W']
+
 
 class CaptureOutput(list):
     """
@@ -54,26 +64,21 @@ def check_subdirectory(parent_dir, sub_name, verbose=True, log=False):
     sub_dir = os.path.join(parent_dir, sub_name)
     if os.path.exists(parent_dir):
         if os.path.exists(sub_dir):
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='info',
+            display_message(verbose, log, log_type='info',
                             message=f'Found existing directory at {sub_dir}')
         else:
-            display_message(verbose=verbose,
-                            log=log,
-                            log_type='info',
+            display_message(verbose, log, log_type='info',
                             message=f'Making new directory at {sub_dir}...')
             os.mkdir(sub_dir)
 
-        return sub_dir
 
     else:
-        display_message(verbose=args.verbose,
-                        log=args.log,
-                        log_type='critical',
+        display_message(verbose, log, log_type='critical',
                         message=f'Nonexistent parent directory: {parent_dir}\n'\
                                 f'Cannot make new directory at {sub_dir}')
-        return None
+        sub_dir = None
+
+    return sub_dir
 
 
 def make_timestamp():
@@ -165,9 +170,13 @@ class InteractiveArgs:
     sky_ap_dim : tuple
         Inner dimensions of sky background rind; defaults
         to (300, 400).
-    sky_thickness : int
-        Thickness of sky background rind in pixels;
-        defaults to 30.
+    sky_thick_x, sky_thick_y : lists of int
+        Thickness of sky background rind in pixels with
+        respect to the (x, y)-axis. Defaults to [30] for a
+        rind of uniform thickness width- and height-wise.
+        If two values are provided, the side (top/bottom or
+        left/right) that has the most open subarray will be
+        assigned the larger value.
     back_method : str
         Which method to use for sky background calculation.
         Possible options are `median` and `mean`; defaults
@@ -198,7 +207,8 @@ class InteractiveArgs:
                  file_type="flt",
                  ap_dim=[44, 268],
                  sky_ap_dim=[300, 400],
-                 sky_thickness=30,
+                 sky_thick_x=[30],
+                 sky_thick_y=[30],
                  back_method='median',
                  ap_phot_fcr=False,
                  ap_phot_flt=False):
@@ -224,10 +234,13 @@ class InteractiveArgs:
         self.file_type = file_type
         self.ap_dim = ap_dim
         self.sky_ap_dim = sky_ap_dim
-        self.sky_thickness = sky_thickness
+#        self.sky_thickness = sky_thickness
+        self.sky_thick_x = sky_thick_x
+        self.sky_thick_y = sky_thick_y
         self.back_method = back_method
         self.ap_phot_fcr = ap_phot_fcr
         self.ap_phot_flt = ap_phot_flt
+
 
     def interactive_logging(self, local=True,
                             log_dir=os.getcwd()):
@@ -377,9 +390,39 @@ def parse_args():
     sky_ap_dim : tuple
         Inner dimensions of sky background rind; defaults
         to (300, 400).
-    sky_thickness : int
-        Thickness of sky background rind in pixels;
-        defaults to 30.
+    sky_thick_x, sky_thick_y : lists of int
+        Thickness of sky background rind in pixels with
+        respect to the (x, y)-axis. Defaults to [30] for a
+        rind of uniform thickness width- and height-wise.
+        If two values are provided, the side (top/bottom or
+        left/right) that has the most open subarray will be
+        assigned the larger value.
+            Example 1:
+                - scan centered at x = 259, y = 255
+                - `sky_thick_x` = [40]
+                - `sky_thick_y` = [40]
+                - `sky_ap_dim` = (300, 350)
+                - inner rind: 109 < x < 409
+                               80 < y < 430
+                - outer rind:  69 < x < 109, 409 < x < 449
+                               40 < y <  80, 430 < y < 470
+                - total area of background rind
+                    ( (449 - 69) * (470 - 40) ) -
+                        ( (409 - 109) * (430 - 80) )
+                            = 58400 px^2
+            Example 2:
+                - scan centered at x = 255, y = 190
+                - `sky_thick_x` = [30]
+                - `sky_thick_y` = [20, 80]
+                - `sky_ap_dim` = (400, 300)
+                - inner rind:  55 < x < 455
+                               40 < y < 340
+                - outer rind:  25 < x < 55, 455 < x < 485
+                               20 < y < 40, 340 < y < 440
+                - total area of background rind
+                    ( (485 - 25) * (440 - 20) ) -
+                        ( (455 - 55) * (340 - 40) )
+                            = 73200 px^2
     back_method : str
         Which method to use for sky background calculation.
         Possible options are `median` and `mean`; defaults
@@ -472,10 +515,18 @@ def parse_args():
                         nargs=2,
                         type=int,
                         default=[300,400])
-    parser.add_argument("--sky_thickness",
-                        help="sky background rind thickness: px (default is 30)",
-                        default=30,
-                        type=int)
+    parser.add_argument("--sky_thick_x",
+                        help="sky background rind thickness in the x-axis: "\
+                             "px (default is 30)",
+                        nargs="+",
+                        type=int,
+                        default=[30])
+    parser.add_argument("--sky_thick_y",
+                        help="sky background rind thickness in the y-axis: "\
+                             "px (default is 30)",
+                        nargs="+",
+                        type=int,
+                        default=[30])
     parser.add_argument("--back_method",
                         help='background subtraction method',
                         default="median",
@@ -514,7 +565,7 @@ def check_preexisting_logging():
         display_message(verbose=True, log=True,
                         log_type='critical',
                         message='Logging has already been enabled for file: '\
-                                f'{existing_handlers[0].__str__().split(" ")[1]}')
+                                f'{str(existing_handlers[0]).split(" ")[1]}')
         preexisting_logging = True
 
     return preexisting_logging
@@ -558,8 +609,8 @@ def setup_logging(local=False,
 
     log_file = os.path.join(log_dir, log_name)
 
-    with open(log_file, 'w') as f:
-        f.writelines([''])
+    with open(log_file, 'w') as file:
+        file.writelines([''])
 
     logging.basicConfig(filename=f'{log_file}.log', filemode='w',
                         format='%(asctime)s - %(levelname)s - %(message)s',
@@ -639,20 +690,24 @@ def initialize_directories(args):
     else:
         trial_dir = os.path.join(MONITOR_DIR, args.name)
 
-    dir_names = ['data', 'bad', 'output']
+    print(f'TRIAL DIR: {trial_dir}')
+
+    dir_names = ['bad', 'output', 'data']
     dirs = {}
 
     for dir_name in dir_names:
-        dir = check_subdirectory(parent_dir=trial_dir,
-                                 sub_name=dir_name,
-                                 verbose=args.verbose,
-                                 log=args.log)
-        dirs[f'{dir_name}_dir'] = dir
+        print(f'DIR_NAME: {dir_name}')
+        sub_dir = check_subdirectory(parent_dir=trial_dir,
+                                       sub_name=dir_name,
+                                       verbose=args.verbose,
+                                       log=args.log)
+        dirs[f'{dir_name}_dir'] = sub_dir
 
         if dir_name == 'data':
             props = [str(x) for x in args.proposals]
+
             for prop in props:
-                prop_dir = check_subdirectory(parent_dir=dir,
+                prop_dir = check_subdirectory(parent_dir=sub_dir,
                                               sub_name=prop,
                                               verbose=args.verbose,
                                               log=args.log)
@@ -664,9 +719,9 @@ def initialize_directories(args):
                                                   log=args.log)
 
                     for filt in args.filters:
-                        filt_dir = check_subdirectory(parent_dir=targ_dir,
-                                                      sub_name=filt,
-                                                      verbose=args.verbose,
-                                                      log=args.log)
+                        _ = check_subdirectory(parent_dir=targ_dir,
+                                               sub_name=filt,
+                                               verbose=args.verbose,
+                                               log=args.log)
 
     return dirs
